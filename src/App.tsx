@@ -184,6 +184,29 @@ export default function App() {
     setLoading(false);
   };
 
+  const handleChartRedirect = (symbol: string) => {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const webUrl = `https://www.tradingview.com/chart/?symbol=${symbol}`;
+    // Some versions of the app use tradingview://symbol/NAME
+    const appUrl = `tradingview://symbol/${symbol}`;
+
+    if (isMobile) {
+      // Direct navigation to appUrl. If the app is installed, the OS will usually 
+      // intercept this. If not, it might show an error. 
+      // A common pattern is to try to open the app scheme and then fallback.
+      window.location.href = appUrl;
+      
+      // Fallback to web after a short delay if the app didn't open (and thus the page didn't hide)
+      setTimeout(() => {
+        if (document.visibilityState === 'visible') {
+          window.open(webUrl, '_blank');
+        }
+      }, 1500);
+    } else {
+      window.open(webUrl, '_blank');
+    }
+  };
+
   const rankedStocks = useMemo(() => {
     const list = Object.values(stocks) as StockAnalysis[];
     return list.map(s => ({
@@ -548,7 +571,7 @@ export default function App() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         className="group hover:bg-white/5 transition-colors cursor-pointer border-l-2 border-l-transparent hover:border-l-indigo-500"
-                        onClick={() => window.open(`https://www.tradingview.com/chart/?symbol=${stock.symbol}`, '_blank')}
+                        onClick={() => handleChartRedirect(stock.symbol)}
                       >
                         <td className="px-1 md:px-4 py-2.5 sticky-col whitespace-nowrap">
                           <div className="flex items-center gap-1 md:gap-3">
@@ -623,7 +646,7 @@ export default function App() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  onClick={() => window.open(`https://www.tradingview.com/chart/?symbol=${stock.symbol}`, '_blank')}
+                  onClick={() => handleChartRedirect(stock.symbol)}
                   className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5 md:p-6 hover:bg-white/10 transition-all group relative overflow-hidden text-left cursor-pointer interactive-target"
                 >
                   <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
