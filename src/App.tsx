@@ -162,21 +162,30 @@ export default function App() {
 
   const fetchAllAnalysis = async (list: string[], currentTF: string) => {
     setLoading(true);
-    // Process in chunks of 5
+    // Process in chunks to balance speed and reliability
+    // 10 is a good balance for concurrent browser connections
+    const batchSize = 10;
     const chunks = [];
-    for (let i = 0; i < list.length; i += 5) {
-      chunks.push(list.slice(i, i + 5));
+    for (let i = 0; i < list.length; i += batchSize) {
+      chunks.push(list.slice(i, i + batchSize));
     }
 
-    for (const chunk of chunks) {
+    let failCount = 0;
+
+    for (const [index, chunk] of chunks.entries()) {
       const results = await Promise.all(
         chunk.map(async (sym) => {
           try {
+            // Add a small randomized jitter to distribute server load if multiple clients hit at once
+            const jitter = Math.random() * 200;
+            if (index > 0) await new Promise(r => setTimeout(r, jitter));
+            
             const data = await fetchWithRetry(`/api/analysis/${sym}?timeframe=${currentTF}`);
             if (data.error) throw new Error(data.error);
             return data;
           } catch (e) {
             console.warn(`Analysis failed for ${sym}:`, e);
+            failCount++;
             return null;
           }
         })
@@ -191,9 +200,12 @@ export default function App() {
         });
         return next;
       });
-
-      // Remove the breathing delay to speed up loading
     }
+
+    if (failCount > list.length / 2) {
+      setError(`Notice: High latency detected. Only ${list.length - failCount} out of ${list.length} assets could be fully synchronized. Try refreshing in a few moments.`);
+    }
+
     setLoading(false);
   };
 
@@ -470,8 +482,8 @@ export default function App() {
 
           {/* Total Assets Counter */}
           <div className={`flex items-baseline gap-1 md:gap-1.5 pl-2 md:pl-4 border-l font-mono ${isDarkMode ? 'border-white/10' : 'border-slate-200'}`}>
-            <span className="text-[8px] md:text-[10px] font-black uppercase text-slate-500 tracking-wider">Stocks Found:</span>
-            <span className="text-xs md:text-sm font-black text-indigo-400">{stats.total}</span>
+            <span className="text-[8px] md:text-[10px] font-black uppercase text-slate-500 tracking-wider">Analyzed:</span>
+            <span className="text-xs md:text-sm font-black text-indigo-400">{stats.total} <span className="text-[10px] text-slate-500 font-bold">/ {symbols.length || '...'}</span></span>
           </div>
         </div>
       </header>
