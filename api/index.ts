@@ -9,6 +9,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Helper to calculate SMA
 function calculateSMA(data: number[], length: number): number | null {
   if (data.length === 0) return null;
   const actualLength = Math.min(data.length, length);
@@ -17,6 +18,7 @@ function calculateSMA(data: number[], length: number): number | null {
   return sum / actualLength;
 }
 
+// Helper to calculate RSI (Wilder's smoothing)
 function calculateRSI(data: number[], length: number): number | null {
   if (data.length < length + 1) return null;
   let gains = [];
@@ -37,23 +39,56 @@ function calculateRSI(data: number[], length: number): number | null {
   return 100 - (100 / (1 + rs));
 }
 
-interface StockAnalysis {
-  symbol: string;
-  name: string;
-  price: number;
-  change: number;
-  marketCap: number;
-  maFast: number;
-  maSlow: number;
-  rsi: number;
-  zone: string;
-  sector: string;
-  industry: string;
-  lastUpdated: string;
+// Request Queue to prevent rate limiting
+class RequestQueue {
+  private queue: { fn: () => Promise<any>, resolve: (v: any) => void, reject: (e: any) => void, timeout: number }[] = [];
+  private activeCount = 0;
+  private maxConcurrency = 10;
+  private delayMs = 30;
+
+  async add<T>(fn: () => Promise<T>, timeoutMs = 25000): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ fn, resolve, reject, timeout: timeoutMs });
+      this.process();
+    });
+  }
+
+  private async process() {
+    if (this.activeCount >= this.maxConcurrency || this.queue.length === 0) return;
+    const item = this.queue.shift();
+    if (!item) return;
+    this.activeCount++;
+    const { fn, resolve, reject, timeout } = item;
+    const execute = async () => {
+      const timeoutPromise = new Promise((_, r) => 
+        setTimeout(() => r(new Error('Yahoo Finance Request Timeout')), timeout)
+      );
+      try {
+        const result = await Promise.race([fn(), timeoutPromise]);
+        resolve(result);
+      } catch (error: any) {
+        if (error?.message?.includes('Too Many Requests') || error?.status === 429) {
+          this.delayMs = Math.min(this.delayMs + 100, 1000);
+        }
+        reject(error);
+      } finally {
+        await new Promise(r => setTimeout(r, this.delayMs));
+        this.activeCount--;
+        if (this.delayMs > 60) this.delayMs -= 5;
+        this.process();
+      }
+    };
+    execute();
+  }
 }
 
+const yfQueue = new RequestQueue();
+
 const cache: Record<string, { data: any, timestamp: number }> = {};
-const CACHE_TTL = 30 * 60 * 1000;
+const CACHE_TTL = 60 * 60 * 1000;
+const quoteCache: Record<string, { data: any, timestamp: number }> = {};
+const summaryCache: Record<string, { data: any, timestamp: number }> = {};
+const META_CACHE_TTL = 30 * 60 * 1000;
 
 const CORE_SYMBOLS = [
   "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "ORCL", "ADBE",
@@ -65,17 +100,23 @@ const CORE_SYMBOLS = [
 
 app.get("/api/stocks", async (req, res) => {
   try {
-    const [actives, gainers, losers, coreQuotes] = await Promise.all([
-      (yahooFinance as any).screener({ scrIds: "most_actives", count: 50 }, undefined, { validateResult: false }),
-      (yahooFinance as any).screener({ scrIds: "day_gainers", count: 50 }, undefined, { validateResult: false }),
-      (yahooFinance as any).screener({ scrIds: "day_losers", count: 50 }, undefined, { validateResult: false }),
-      yahooFinance.quote(CORE_SYMBOLS, undefined, { validateResult: false }).catch(() => [])
+    const [actives, gainers, losers, undervalued, growth, aggressive, coreQuotes] = await Promise.all([
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "most_actives", count: 200 }, undefined, { validateResult: false })),
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "day_gainers", count: 150 }, undefined, { validateResult: false })),
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "day_losers", count: 150 }, undefined, { validateResult: false })),
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "undervalued_growth_stocks", count: 150 }, undefined, { validateResult: false })),
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "growth_technology_stocks", count: 150 }, undefined, { validateResult: false })),
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "aggressive_small_caps", count: 100 }, undefined, { validateResult: false })),
+      yfQueue.add(() => yahooFinance.quote(CORE_SYMBOLS, undefined, { validateResult: false }).catch(() => []))
     ]) as any[];
 
     const allQuotes = [
       ...(actives.quotes || []),
       ...(gainers.quotes || []),
       ...(losers.quotes || []),
+      ...(undervalued.quotes || []),
+      ...(growth.quotes || []),
+      ...(aggressive.quotes || []),
       ...(Array.isArray(coreQuotes) ? coreQuotes : [coreQuotes]),
     ];
 
@@ -86,6 +127,7 @@ app.get("/api/stocks", async (req, res) => {
           symbol: q.symbol,
           marketCap: q.marketCap || 0,
         });
+        quoteCache[q.symbol] = { data: q, timestamp: Date.now() };
       }
     });
 
@@ -132,21 +174,47 @@ app.get("/api/analysis/:symbol", async (req, res) => {
 
     const queryOptions = {
       period1: startDate,
+      period2: endDate,
       interval: interval as any,
     };
 
-    const [chartResult, quote, summary] = await Promise.all([
-      yahooFinance.chart(symbol, queryOptions, { validateResult: false }).catch(() => ({ quotes: [] })),
-      yahooFinance.quote(symbol, undefined, { validateResult: false }).catch(() => ({})),
-      yahooFinance.quoteSummary(symbol, { modules: ['assetProfile'] }, { validateResult: false }).catch(() => null)
-    ]) as any[];
+    let history: any[] = [];
+    let quote: any = null;
+    let summary: any = null;
 
-    const history = chartResult.quotes || [];
+    if (quoteCache[symbol] && (Date.now() - quoteCache[symbol].timestamp) < META_CACHE_TTL) {
+      quote = quoteCache[symbol].data;
+    }
+    if (summaryCache[symbol] && (Date.now() - summaryCache[symbol].timestamp) < META_CACHE_TTL) {
+      summary = summaryCache[symbol].data;
+    }
+
+    const promises: Promise<any>[] = [
+      yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }).catch(() => ({ quotes: [] })))
+    ];
+    if (!quote) promises.push(yfQueue.add(() => yahooFinance.quote(symbol, undefined, { validateResult: false }).catch(() => ({}))));
+    if (!summary) promises.push(yfQueue.add(() => yahooFinance.quoteSummary(symbol, { modules: ['assetProfile'] }, { validateResult: false }).catch(() => null)));
+
+    const results = await Promise.all(promises);
+    const chartResult = results[0];
+    let nextIdx = 1;
+    if (!quote) quote = results[nextIdx++];
+    if (!summary) summary = results[nextIdx++];
+
+    if (quote) quoteCache[symbol] = { data: quote, timestamp: Date.now() };
+    if (summary) summaryCache[symbol] = { data: summary, timestamp: Date.now() };
+
+    history = chartResult.quotes || [];
+    if (history.length === 0) {
+      const fallbackResult = await yfQueue.add(() => yahooFinance.chart(symbol, { period1: subDays(endDate, 365), interval: '1d' as const }, { validateResult: false }).catch(() => ({ quotes: [] }))) as any;
+      history = fallbackResult.quotes || [];
+    }
+
     const assetProfile = summary?.assetProfile || {};
     const prices = history.map((h: any) => h.close).filter((c: any): c is number => typeof c === 'number');
 
     if (prices.length === 0) {
-      return res.status(404).json({ error: `No historical data found for ${symbol} on ${timeframe} timeframe.` });
+      return res.status(404).json({ error: `No historical data found for ${symbol}` });
     }
 
     const maFast = calculateSMA(prices, 50);
@@ -169,7 +237,7 @@ app.get("/api/analysis/:symbol", async (req, res) => {
       else sector = 'Other';
     }
 
-    const data: StockAnalysis = {
+    const data = {
       symbol,
       name: quote.longName || quote.shortName || symbol,
       price: quote.regularMarketPrice || 0,
@@ -187,8 +255,7 @@ app.get("/api/analysis/:symbol", async (req, res) => {
     cache[cacheKey] = { data, timestamp: Date.now() };
     res.json(data);
   } catch (error: any) {
-    console.error(`Error analyzing ${symbol}:`, error);
-    res.status(500).json({ error: `Failed to analyze ${symbol}`, details: error.message });
+    res.status(500).json({ error: `Failed to analyze ${symbol}` });
   }
 });
 
