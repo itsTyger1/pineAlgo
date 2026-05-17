@@ -187,8 +187,8 @@ export default function App() {
   const handleChartRedirect = (symbol: string) => {
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     const webUrl = `https://www.tradingview.com/chart/?symbol=${symbol}`;
-    // The chart path is more likely to trigger the specific chart view in the app
-    const appUrl = `tradingview://chart?symbol=${symbol}`;
+    // The tvscan scheme is often more reliable for triggering the chart view in some app versions
+    const appUrl = `tradingview://tvscan?symbol=${symbol}`;
 
     if (isMobile) {
       // Direct navigation to appUrl. If the app is installed, the OS will usually 
