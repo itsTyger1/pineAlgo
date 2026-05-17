@@ -54,10 +54,10 @@ function calculateRSI(data: number[], length: number): number | null {
 class RequestQueue {
   private queue: { fn: () => Promise<any>, resolve: (v: any) => void, reject: (e: any) => void, timeout: number }[] = [];
   private activeCount = 0;
-  private maxConcurrency = 3; // Allow a few concurrent requests to avoid massive bottlenecks
-  private delayMs = 60; // Slightly more conservative delay
+  private maxConcurrency = 10; // Increased concurrency to handle volume
+  private delayMs = 30; // Reduced delay as we have concurrency and dynamic backoff
 
-  async add<T>(fn: () => Promise<T>, timeoutMs = 15000): Promise<T> {
+  async add<T>(fn: () => Promise<T>, timeoutMs = 25000): Promise<T> {
     return new Promise((resolve, reject) => {
       this.queue.push({ fn, resolve, reject, timeout: timeoutMs });
       this.process();
@@ -134,13 +134,20 @@ const CORE_SYMBOLS = [
   "FSLR", "ENPH", "NEE", "SEDG"
 ];
 
+// Cache for basic stock info to avoid redundant calls
+const quoteCache: Record<string, { data: any, timestamp: number }> = {};
+const summaryCache: Record<string, { data: any, timestamp: number }> = {};
+const META_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
 app.get("/api/stocks", async (req, res) => {
   try {
-    // Fetch from multiple categories to get a broader list since "most_actives" is often limited
-    const [actives, gainers, losers, coreQuotes] = await Promise.all([
+    // Fetch from multiple categories to get a broader list
+    const [actives, gainers, losers, undervalued, growth, coreQuotes] = await Promise.all([
       yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "most_actives", count: 100 }, undefined, { validateResult: false })),
       yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "day_gainers", count: 100 }, undefined, { validateResult: false })),
       yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "day_losers", count: 100 }, undefined, { validateResult: false })),
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "undervalued_growth_stocks", count: 50 }, undefined, { validateResult: false })),
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "growth_technology_stocks", count: 50 }, undefined, { validateResult: false })),
       yfQueue.add(() => yahooFinance.quote(CORE_SYMBOLS, undefined, { validateResult: false }).catch(() => []))
     ]) as any[];
 
@@ -148,10 +155,12 @@ app.get("/api/stocks", async (req, res) => {
       ...(actives.quotes || []),
       ...(gainers.quotes || []),
       ...(losers.quotes || []),
+      ...(undervalued.quotes || []),
+      ...(growth.quotes || []),
       ...(Array.isArray(coreQuotes) ? coreQuotes : [coreQuotes]),
     ];
 
-    // Deduplicate by symbol and map to desired structure
+    // Deduplicate by symbol and populate quote cache
     const uniqueStocksMap = new Map();
     allQuotes.forEach((q: any) => {
       if (q && q.symbol && !uniqueStocksMap.has(q.symbol)) {
@@ -159,13 +168,15 @@ app.get("/api/stocks", async (req, res) => {
           symbol: q.symbol,
           marketCap: q.marketCap || 0,
         });
+        // Seed the quote cache to save a per-symbol request later
+        quoteCache[q.symbol] = { data: q, timestamp: Date.now() };
       }
     });
 
-    // Sort by Market Cap descending and take top 500
+    // Sort by Market Cap descending and take top 250 for high reliability
     const stockList = Array.from(uniqueStocksMap.values())
       .sort((a, b) => b.marketCap - a.marketCap)
-      .slice(0, 500);
+      .slice(0, 250);
 
     res.json(stockList);
   } catch (error) {
@@ -211,22 +222,47 @@ app.get("/api/analysis/:symbol", async (req, res) => {
     };
 
     let history: any[] = [];
-    let quote: any = {};
+    let quote: any = null;
     let summary: any = null;
 
+    // Try to get quote from cache first
+    if (quoteCache[symbol] && (Date.now() - quoteCache[symbol].timestamp) < META_CACHE_TTL) {
+      quote = quoteCache[symbol].data;
+    }
+
+    // Try to get summary from cache first
+    if (summaryCache[symbol] && (Date.now() - summaryCache[symbol].timestamp) < META_CACHE_TTL) {
+      summary = summaryCache[symbol].data;
+    }
+
     try {
-      const [chartResult, quoteResult, summaryResult] = await Promise.all([
+      const promises: Promise<any>[] = [
         yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }).catch((err) => {
           console.warn(`Chart data fetch failed for ${symbol} (${interval}):`, err.message);
           return { quotes: [] };
-        })),
-        yfQueue.add(() => yahooFinance.quote(symbol, undefined, { validateResult: false }).catch(() => ({}))),
-        yfQueue.add(() => yahooFinance.quoteSummary(symbol, { modules: ['assetProfile'] }, { validateResult: false }).catch(() => null))
-      ]) as [any, any, any];
+        }))
+      ];
+
+      // Only add to promises if not in cache
+      if (!quote) {
+        promises.push(yfQueue.add(() => yahooFinance.quote(symbol, undefined, { validateResult: false }).catch(() => ({}))));
+      }
+      if (!summary) {
+        promises.push(yfQueue.add(() => yahooFinance.quoteSummary(symbol, { modules: ['assetProfile'] }, { validateResult: false }).catch(() => null)));
+      }
+
+      const results = await Promise.all(promises);
+      const chartResult = results[0];
+      
+      let nextIdx = 1;
+      if (!quote) quote = results[nextIdx++];
+      if (!summary) summary = results[nextIdx++];
+
+      // Update caches
+      if (quote) quoteCache[symbol] = { data: quote, timestamp: Date.now() };
+      if (summary) summaryCache[symbol] = { data: summary, timestamp: Date.now() };
 
       history = chartResult.quotes || [];
-      quote = quoteResult;
-      summary = summaryResult;
 
       // Final fallback if interval fetch failed: try daily chart with smaller range
       if (history.length === 0) {
