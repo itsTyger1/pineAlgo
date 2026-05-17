@@ -162,8 +162,8 @@ export default function App() {
 
   const fetchAllAnalysis = async (list: string[], currentTF: string) => {
     setLoading(true);
-    // Larger batches are more efficient if the server is stable
-    const batchSize = 40;
+    // Smaller batches to avoid Vercel 10s serverless function timeout
+    const batchSize = 10;
     const chunks = [];
     for (let i = 0; i < list.length; i += batchSize) {
       chunks.push(list.slice(i, i + batchSize));
@@ -171,7 +171,7 @@ export default function App() {
 
     let failCount = 0;
     // Process batches with limited concurrency on the client
-    const maxConcurrentBatches = 2;
+    const maxConcurrentBatches = 3;
     const activeRequests = new Set();
     const remainingChunks = [...chunks];
 

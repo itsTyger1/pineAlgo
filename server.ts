@@ -152,14 +152,11 @@ app.get("/api/stocks", async (req, res) => {
     // Fetch from multiple categories to get a broader list
     const screeners = [
       "most_actives", "day_gainers", "day_losers", 
-      "undervalued_growth_stocks", "growth_technology_stocks", 
-      "aggressive_small_caps", "small_cap_gainers", 
-      "mid_cap_gainers", "large_cap_gainers",
-      "undervalued_large_caps", "undervalued_growth_stocks"
+      "growth_technology_stocks", "undervalued_large_caps"
     ];
 
     const results = await Promise.allSettled(
-      screeners.map(id => yfQueue.add(() => (yahooFinance as any).screener({ scrIds: id, count: 200 }, undefined, { validateResult: false })))
+      screeners.map(id => yfQueue.add(() => (yahooFinance as any).screener({ scrIds: id, count: 100 }, undefined, { validateResult: false })))
     );
 
     const allQuotes: any[] = [];
@@ -190,10 +187,10 @@ app.get("/api/stocks", async (req, res) => {
       }
     });
 
-    // Sort by Market Cap descending and take top 500
+    // Sort by Market Cap descending and take top 150
     const stockList = Array.from(uniqueStocksMap.values())
       .sort((a, b) => b.marketCap - a.marketCap)
-      .slice(0, 500);
+      .slice(0, 150);
 
     cachedStockList = stockList;
     lastStockListCacheTime = Date.now();
@@ -257,7 +254,7 @@ async function getAnalysis(symbol: string, timeframe: string) {
 
   let chartResult;
   try {
-    chartResult = await yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }), 15000);
+    chartResult = await yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }), 4000);
   } catch (e) {
     console.error(`Chart failed for ${symbol}`);
     chartResult = { quotes: [] };
@@ -268,8 +265,20 @@ async function getAnalysis(symbol: string, timeframe: string) {
 
   let sector = 'Other';
   const summary = summaryCache[symbol]?.data;
+  
+  // Fallback map for popular stocks if YF rate limits us on AWS/Vercel
+  const SECTOR_MAP: Record<string, string> = {
+    "AAPL": "Technology", "MSFT": "Technology", "GOOGL": "Communication", "AMZN": "Consumer", "NVDA": "Technology", "META": "Communication", "TSLA": "Consumer", "AVGO": "Technology", "ORCL": "Technology", "ADBE": "Technology",
+    "PLTR": "Technology", "SMCI": "Technology", "AMD": "Technology", "TSM": "Technology", 
+    "XOM": "Energy", "CVX": "Energy", "COP": "Energy", "OXY": "Energy",
+    "JPM": "Financials", "BAC": "Financials", "WFC": "Financials", "GS": "Financials",
+    "JNJ": "Healthcare", "UNH": "Healthcare", "PFE": "Healthcare", "LLY": "Healthcare"
+  };
+
   if (summary?.assetProfile?.sector) {
     sector = summary.assetProfile.sector;
+  } else if (SECTOR_MAP[symbol]) {
+    sector = SECTOR_MAP[symbol];
   } else if (quote?.quoteType === 'ETF') {
     sector = 'ETF / Fund';
   } else if (quote?.quoteType === 'MUTUALFUND') {
@@ -380,7 +389,7 @@ app.post("/api/analysis/batch", async (req, res) => {
           if (res) {
             summaryCache[sym] = { data: res, timestamp: Date.now() };
           }
-        }).catch(() => null), 10000)
+        }).catch(() => null), 4000)
       ));
     }
 
