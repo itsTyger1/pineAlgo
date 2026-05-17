@@ -151,8 +151,8 @@ export default function App() {
       } else {
         setError('Failed to fetch stock list');
       }
-    } catch (err) {
-      setError('Connection error: System calibrating. Please wait...');
+    } catch (err: any) {
+      setError(`Connection error: ${err.message || 'System calibrating'}. Please wait...`);
       console.error(err);
     } finally {
       setLoading(false);
