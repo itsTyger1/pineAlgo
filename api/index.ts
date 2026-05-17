@@ -166,18 +166,15 @@ app.get("/api/stocks", async (req, res) => {
 
   try {
     const fetchStocksTask = async () => {
-      // Fetch from multiple categories to get a broader list
-      const screeners = process.env.VERCEL 
-        ? ["most_actives", "day_gainers"] 
-        : ["most_actives", "day_gainers", "day_losers", "growth_technology_stocks", "undervalued_large_caps"];
+      // Fetch from multiple categories to get a broader list targeting large caps
+      const screeners = ["most_actives", "undervalued_large_caps", "growth_technology_stocks", "day_gainers"];
 
       const results = await Promise.allSettled(
-        screeners.map(id => yfQueue.add(() => (yahooFinance as any).screener({ scrIds: id, count: process.env.VERCEL ? 30 : 100 }, undefined, { validateResult: false })))
+        screeners.map(id => yfQueue.add(() => (yahooFinance as any).screener({ scrIds: id, count: 250 }, undefined, { validateResult: false })))
       );
 
       const allQuotes: any[] = [];
       results.forEach(r => {
-        // Vercel has 10s limits, so handle failures
         if (r.status === 'fulfilled' && r.value && (r.value as any).quotes) {
           allQuotes.push(...(r.value as any).quotes);
         }
@@ -208,18 +205,18 @@ app.get("/api/stocks", async (req, res) => {
         }
       });
 
-      // Sort by Market Cap descending and take top 150
+      // Sort by Market Cap descending and take top 500
       const stockList = Array.from(uniqueStocksMap.values())
         .sort((a, b) => b.marketCap - a.marketCap)
-        .slice(0, 150);
+        .slice(0, 500);
 
       cachedStockList = stockList;
       lastStockListCacheTime = Date.now();
       return stockList;
     };
 
-    // Vercel serverless has 10s limit, we time out after 6 seconds
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 6000));
+    // Vercel serverless has 10s limit, we time out after 8.5 seconds to allow for overhead
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8500));
     const stockList = await Promise.race([fetchStocksTask(), timeoutPromise]);
     
     return res.json(stockList);
