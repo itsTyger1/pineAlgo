@@ -201,34 +201,48 @@ export default function App() {
   const touchStart = useRef(0);
 
   useEffect(() => {
+    let currentPullY = 0;
+    const scrollThreshold = 80;
+
     const onTouchStart = (e: TouchEvent) => {
-      if (window.scrollY === 0) {
+      if (window.scrollY <= 0) {
         touchStart.current = e.touches[0].clientY;
       }
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (window.scrollY === 0) {
+      const scrollPos = window.scrollY || document.documentElement.scrollTop;
+      
+      if (scrollPos <= 0) {
         const delta = e.touches[0].clientY - touchStart.current;
         if (delta > 0) {
-          setPullY(Math.min(delta * 0.4, 100));
-          // Provide some visual feedback during pull
-          if (delta > 20 && e.cancelable) {
-            // e.preventDefault(); // Don't block scroll completely yet
+          // If we are pulling down, update visual state
+          currentPullY = Math.min(delta * 0.4, 100);
+          setPullY(currentPullY);
+          
+          // Only prevent default if we have actually pulled a bit to avoid
+          // breaking horizontal swipes or minimal accidental vertical movements
+          if (currentPullY > 10 && e.cancelable) {
+            e.preventDefault();
           }
+        } else {
+          currentPullY = 0;
+          setPullY(0);
         }
       }
     };
 
     const onTouchEnd = () => {
-      if (pullY >= 80 && !loading) {
+      if (currentPullY >= scrollThreshold && !loading) {
         fetchStocks();
       }
+      currentPullY = 0;
       setPullY(0);
     };
 
+    // Use passive: false so we CAN prevent default browser pull-to-refresh if needed
     window.addEventListener('touchstart', onTouchStart, { passive: true });
-    window.addEventListener('touchmove', onTouchMove, { passive: true });
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
     window.addEventListener('touchend', onTouchEnd);
 
     return () => {
@@ -236,7 +250,7 @@ export default function App() {
       window.removeEventListener('touchmove', onTouchMove);
       window.removeEventListener('touchend', onTouchEnd);
     };
-  }, [pullY, loading]);
+  }, [loading]); // Only re-bind if loading state changes (to capture correct fetchStocks ref if needed, though fetchStocks is likely stable)
 
   const handleChartRedirect = (symbol: string) => {
     const userAgent = navigator.userAgent || navigator.vendor;
@@ -368,7 +382,7 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 font-sans selection:bg-indigo-500/30 overflow-x-hidden relative ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+    <div className={`min-h-screen transition-colors duration-300 font-sans selection:bg-indigo-500/30 overflow-x-hidden relative overscroll-y-none ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
       {/* Pull to Refresh Indicator */}
       <div 
         id="pull-refresh-indicator"
