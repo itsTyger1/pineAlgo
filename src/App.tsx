@@ -147,7 +147,7 @@ export default function App() {
       if (Array.isArray(data)) {
         setSymbols(data);
         setStocks({});
-        fetchAllAnalysis(data.map(s => s.symbol), timeframe);
+        await fetchAllAnalysis(data.map(s => s.symbol), timeframe);
       } else {
         setError('Failed to fetch stock list');
       }
@@ -163,8 +163,8 @@ export default function App() {
   const fetchAllAnalysis = async (list: string[], currentTF: string) => {
     setLoading(true);
     // Process in chunks to balance speed and reliability
-    // 10 is a good balance for concurrent browser connections
-    const batchSize = 10;
+    // 15 is a good balance for higher volumes (500 assets)
+    const batchSize = 15;
     const chunks = [];
     for (let i = 0; i < list.length; i += batchSize) {
       chunks.push(list.slice(i, i + batchSize));
