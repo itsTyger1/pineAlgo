@@ -142,12 +142,13 @@ const META_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 app.get("/api/stocks", async (req, res) => {
   try {
     // Fetch from multiple categories to get a broader list
-    const [actives, gainers, losers, undervalued, growth, coreQuotes] = await Promise.all([
-      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "most_actives", count: 100 }, undefined, { validateResult: false })),
-      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "day_gainers", count: 100 }, undefined, { validateResult: false })),
-      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "day_losers", count: 100 }, undefined, { validateResult: false })),
-      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "undervalued_growth_stocks", count: 50 }, undefined, { validateResult: false })),
-      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "growth_technology_stocks", count: 50 }, undefined, { validateResult: false })),
+    const [actives, gainers, losers, undervalued, growth, aggressive, coreQuotes] = await Promise.all([
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "most_actives", count: 200 }, undefined, { validateResult: false })),
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "day_gainers", count: 150 }, undefined, { validateResult: false })),
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "day_losers", count: 150 }, undefined, { validateResult: false })),
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "undervalued_growth_stocks", count: 150 }, undefined, { validateResult: false })),
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "growth_technology_stocks", count: 150 }, undefined, { validateResult: false })),
+      yfQueue.add(() => (yahooFinance as any).screener({ scrIds: "aggressive_small_caps", count: 100 }, undefined, { validateResult: false })),
       yfQueue.add(() => yahooFinance.quote(CORE_SYMBOLS, undefined, { validateResult: false }).catch(() => []))
     ]) as any[];
 
@@ -157,6 +158,7 @@ app.get("/api/stocks", async (req, res) => {
       ...(losers.quotes || []),
       ...(undervalued.quotes || []),
       ...(growth.quotes || []),
+      ...(aggressive.quotes || []),
       ...(Array.isArray(coreQuotes) ? coreQuotes : [coreQuotes]),
     ];
 
@@ -173,10 +175,10 @@ app.get("/api/stocks", async (req, res) => {
       }
     });
 
-    // Sort by Market Cap descending and take top 250 for high reliability
+    // Sort by Market Cap descending and take top 500
     const stockList = Array.from(uniqueStocksMap.values())
       .sort((a, b) => b.marketCap - a.marketCap)
-      .slice(0, 250);
+      .slice(0, 500);
 
     res.json(stockList);
   } catch (error) {
