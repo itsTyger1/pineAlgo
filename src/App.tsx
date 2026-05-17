@@ -18,7 +18,9 @@ import {
   BarChart3,
   Filter,
   Check,
-  ChevronDown
+  ChevronDown,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -53,8 +55,19 @@ export default function App() {
   const [showSectorDropdown, setShowSectorDropdown] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('theme');
+      return saved ? saved === 'dark' : true;
+    }
+    return true;
+  });
   const signalRef = useRef<HTMLDivElement>(null);
   const sectorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+  }, [isDarkMode]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -327,7 +340,7 @@ export default function App() {
     switch (zone) {
       case 'Standard Buy': 
         return (
-          <span className={`${baseClass} bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 inline-flex items-center gap-1`}>
+          <span className={`${baseClass} inline-flex items-center gap-1 transition-all duration-300 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-emerald-50 text-emerald-600 border-emerald-200 border'}`}>
             <TrendingUp className="w-2.5 h-2.5 md:w-3 md:h-3" /> 
             <span className="hidden md:inline">Standard Buy</span>
             <span className="md:hidden">Buy</span>
@@ -335,7 +348,7 @@ export default function App() {
         );
       case 'Value Pullback': 
         return (
-          <span className={`${baseClass} bg-amber-500/20 text-amber-400 border border-amber-500/40 inline-flex items-center gap-1`}>
+          <span className={`${baseClass} inline-flex items-center gap-1 transition-all duration-300 ${isDarkMode ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-amber-50 text-amber-600 border-amber-200 border'}`}>
             <Info className="w-2.5 h-2.5 md:w-3 md:h-3" /> 
             <span className="hidden md:inline">Value Pullback</span>
             <span className="md:hidden">Value</span>
@@ -343,68 +356,76 @@ export default function App() {
         );
       case 'Sell Section': 
         return (
-          <span className={`${baseClass} bg-rose-500/20 text-rose-400 border border-rose-500/40 inline-flex items-center gap-1`}>
+          <span className={`${baseClass} inline-flex items-center gap-1 transition-all duration-300 ${isDarkMode ? 'bg-rose-500/20 text-rose-400 border-rose-500/40' : 'bg-rose-50 text-rose-600 border-rose-200 border'}`}>
             <TrendingDown className="w-2.5 h-2.5 md:w-3 md:h-3" /> 
             <span className="hidden md:inline">Sell Zone</span>
             <span className="md:hidden">Sell</span>
           </span>
         );
       default: 
-        return <span className={`${baseClass} bg-white/5 text-slate-400 border border-white/10`}>Neutral</span>;
+        return <span className={`transition-all duration-300 ${baseClass} ${isDarkMode ? 'bg-white/5 text-slate-400 border border-white/10' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>Neutral</span>;
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500/30 overflow-x-hidden relative">
+    <div className={`min-h-screen transition-colors duration-300 font-sans selection:bg-indigo-500/30 overflow-x-hidden relative ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
       {/* Pull to Refresh Indicator */}
       <div 
         id="pull-refresh-indicator"
         className="fixed top-0 left-0 w-full z-[100] flex items-center justify-center pointer-events-none transition-transform"
         style={{ transform: `translateY(${pullY - 50}px)`, opacity: pullY > 15 ? 1 : 0 }}
       >
-        <div className="bg-indigo-600 rounded-full p-2.5 shadow-2xl shadow-indigo-500/50 border border-white/20 flex items-center gap-2">
-          <RefreshCcw className={`w-4 h-4 text-white ${loading || pullY >= 80 ? 'animate-spin' : ''}`} />
-          {pullY >= 80 && !loading && <span className="text-[8px] font-black text-white uppercase tracking-widest pr-1">Release to Sync</span>}
+        <div className={`rounded-full p-2.5 shadow-2xl flex items-center gap-2 transition-all duration-300 ${isDarkMode ? 'bg-indigo-600 border-white/20 shadow-indigo-500/50 text-white' : 'bg-white border-slate-200 shadow-slate-200 text-indigo-600 border'}`}>
+          <RefreshCcw className={`w-4 h-4 ${loading || pullY >= 80 ? 'animate-spin' : ''}`} />
+          {pullY >= 80 && !loading && <span className={`text-[8px] font-black uppercase tracking-widest pr-1 ${isDarkMode ? 'text-white' : 'text-indigo-600'}`}>Release to Sync</span>}
         </div>
       </div>
       {/* Frosted Glass Background Accents */}
       <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/20 rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-emerald-600/10 rounded-full blur-[120px]"></div>
-        <div className="absolute top-[20%] right-[10%] w-[30%] h-[10%] bg-amber-600/10 rounded-full blur-[120px]"></div>
+        <div className={`absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full blur-[120px] ${isDarkMode ? 'bg-blue-600/20' : 'bg-blue-600/10'}`}></div>
+        <div className={`absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full blur-[120px] ${isDarkMode ? 'bg-emerald-600/10' : 'bg-emerald-600/5'}`}></div>
+        <div className={`absolute top-[20%] right-[10%] w-[30%] h-[10%] rounded-full blur-[120px] ${isDarkMode ? 'bg-amber-600/10' : 'bg-amber-600/5'}`}></div>
       </div>
 
       {/* Header */}
-      <header className="sticky top-0 z-50 h-14 md:h-20 border-b border-white/10 flex items-center justify-between px-3 md:px-8 backdrop-blur-md bg-slate-950/80">
+      <header className={`sticky top-0 z-50 h-14 md:h-20 border-b flex items-center justify-between px-3 md:px-8 backdrop-blur-md transition-all duration-300 ${isDarkMode ? 'bg-slate-950/80 border-white/10' : 'bg-white/80 border-slate-200'}`}>
         <div className="flex items-center gap-2 md:gap-3">
           <div className="w-7 h-7 md:w-10 md:h-10 bg-indigo-500 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
             <BarChart3 className="w-4 h-4 md:w-6 md:h-6 text-white" />
           </div>
-          <h1 className="text-base md:text-xl font-bold tracking-tight text-white uppercase select-none hidden sm:block">
+          <h1 className={`text-base md:text-xl font-bold tracking-tight uppercase select-none hidden sm:block ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             PINE<span className="text-indigo-400 font-black">ALGO</span>
           </h1>
         </div>
 
         <div className={`flex-1 max-w-md mx-2 md:mx-8 relative group transition-all duration-300 ${isSearchOpen ? 'translate-y-0 opacity-100' : 'hidden lg:block'}`}>
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+          <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 group-focus-within:text-indigo-400 transition-colors ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
           <input 
             type="text" 
             placeholder="Search Assets..." 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-white/5 border border-white/10 rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all placeholder:text-slate-600"
+            className={`w-full border rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-indigo-500/50 transition-all ${isDarkMode ? 'bg-white/5 border-white/10 text-white focus:bg-white/10 placeholder:text-slate-600' : 'bg-slate-100 border-slate-200 text-slate-900 focus:bg-white placeholder:text-slate-400'}`}
           />
         </div>
 
         <div className="flex items-center gap-2 md:gap-4">
           <button 
-            className="lg:hidden p-2 text-slate-400 hover:text-white interactive-target"
+            className={`p-2 rounded-full transition-all interactive-target ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200'}`}
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          >
+            {isDarkMode ? <Sun className="w-4 h-4 md:w-5 md:h-5" /> : <Moon className="w-4 h-4 md:w-5 md:h-5" />}
+          </button>
+
+          <button 
+            className={`lg:hidden p-2 interactive-target ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
             onClick={() => setIsSearchOpen(!isSearchOpen)}
           >
             <Search className="w-5 h-5" />
           </button>
 
-          <div className="flex p-0.5 bg-white/5 rounded-lg border border-white/10 shrink-0">
+          <div className={`flex p-0.5 rounded-lg border shrink-0 ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-100 border-slate-200'}`}>
             {[
               { id: '1d', label: '1D' },
               { id: '1wk', label: '1W' },
@@ -426,7 +447,7 @@ export default function App() {
 
           <button 
             onClick={fetchStocks}
-            className="p-2 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-all active:scale-95 disabled:opacity-50 interactive-target"
+            className={`p-2 rounded-full transition-all active:scale-95 disabled:opacity-50 interactive-target ${isDarkMode ? 'hover:bg-white/10 text-slate-400 hover:text-white' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-900'}`}
             disabled={loading}
             title="Force Sync"
           >
@@ -434,7 +455,7 @@ export default function App() {
           </button>
 
           {/* Total Assets Counter */}
-          <div className="flex items-baseline gap-1 md:gap-1.5 pl-2 md:pl-4 border-l border-white/10 font-mono">
+          <div className={`flex items-baseline gap-1 md:gap-1.5 pl-2 md:pl-4 border-l font-mono ${isDarkMode ? 'border-white/10' : 'border-slate-200'}`}>
             <span className="text-[8px] md:text-[10px] font-black uppercase text-slate-500 tracking-wider">Stocks Found:</span>
             <span className="text-xs md:text-sm font-black text-indigo-400">{stats.total}</span>
           </div>
@@ -446,7 +467,7 @@ export default function App() {
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 font-mono">
           <div className="flex flex-wrap items-center gap-3">
             {/* Market Flow Status */}
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border bg-white/5 backdrop-blur-md ${stats.buyCount + stats.valueCount > stats.sellCount ? 'border-emerald-500/30 text-emerald-400' : 'border-rose-500/30 text-rose-400'}`}>
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border backdrop-blur-md ${isDarkMode ? 'bg-white/5' : 'bg-slate-100'} ${stats.buyCount + stats.valueCount > stats.sellCount ? 'border-emerald-500/30 text-emerald-400' : 'border-rose-500/30 text-rose-400'}`}>
               <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${stats.buyCount + stats.valueCount > stats.sellCount ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.5)]'}`}></div>
               <span className="text-[10px] font-black uppercase tracking-widest">
                 Flow: {stats.buyCount + stats.valueCount > stats.sellCount ? 'Bullish' : 'Bearish'}
@@ -454,7 +475,7 @@ export default function App() {
             </div>
 
             {/* Sync Timer */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-white/5 text-slate-400">
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${isDarkMode ? 'border-white/10 bg-white/5 text-slate-400' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
               <RefreshCcw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
               <span className="text-[10px] font-bold uppercase tracking-wider">
                 {lastSynced ? `Synced: ${lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Calibrating...'}
@@ -475,37 +496,36 @@ export default function App() {
               )}
             </AnimatePresence>
 
-            {/* Data Feed Tag */}
-            <div className="hidden xl:flex items-center gap-2 px-2 py-1 rounded border border-white/5 bg-slate-900/40 opacity-40 hover:opacity-100 transition-opacity">
+            <div className={`hidden xl:flex items-center gap-2 px-2 py-1 rounded border opacity-40 hover:opacity-100 transition-opacity ${isDarkMode ? 'border-white/5 bg-slate-900/40' : 'border-slate-200 bg-slate-100'}`}>
               <span className="text-[8px] font-black text-indigo-400/80 uppercase">Yahoo Feed v1.2</span>
             </div>
           </div>
 
           {/* Breakdown Notification Bar */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 md:gap-2 w-full md:w-auto">
-            <div className="flex flex-col px-2 py-1.5 md:px-3 md:py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg md:rounded-xl">
-              <span className="text-xs font-black text-emerald-400 leading-none">{stats.buyCount}</span>
-              <span className="text-[7.5px] md:text-[8px] uppercase font-bold text-emerald-400/60 tracking-wider mt-1">Standard Buys</span>
+            <div className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl ${isDarkMode ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+              <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>{stats.buyCount}</span>
+              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-emerald-400/60' : 'text-emerald-600/60'}`}>Standard Buys</span>
             </div>
-            <div className="flex flex-col px-2 py-1.5 md:px-3 md:py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg md:rounded-xl">
-              <span className="text-xs font-black text-amber-400 leading-none">{stats.valueCount}</span>
-              <span className="text-[7.5px] md:text-[8px] uppercase font-bold text-amber-400/60 tracking-wider mt-1">Pullbacks</span>
+            <div className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl ${isDarkMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
+              <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>{stats.valueCount}</span>
+              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-amber-400/60' : 'text-amber-600/60'}`}>Pullbacks</span>
             </div>
-            <div className="flex flex-col px-2 py-1.5 md:px-3 md:py-2 bg-rose-500/10 border border-rose-500/20 rounded-lg md:rounded-xl">
-              <span className="text-xs font-black text-rose-400 leading-none">{stats.sellCount}</span>
-              <span className="text-[7.5px] md:text-[8px] uppercase font-bold text-rose-400/60 tracking-wider mt-1">Sell Zones</span>
+            <div className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl ${isDarkMode ? 'bg-rose-500/10 border-rose-500/20' : 'bg-rose-50 text-rose-600 border-rose-100'}`}>
+              <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-rose-400' : 'text-rose-600'}`}>{stats.sellCount}</span>
+              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-rose-400/60' : 'text-rose-600/60'}`}>Sell Zones</span>
             </div>
-            <div className="flex flex-col px-2 py-1.5 md:px-3 md:py-2 bg-white/5 border border-white/10 rounded-lg md:rounded-xl">
-              <span className="text-xs font-black text-slate-300 leading-none">{stats.neutralCount}</span>
-              <span className="text-[7.5px] md:text-[8px] uppercase font-bold text-slate-500 tracking-wider mt-1">Neutral</span>
+            <div className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-100 border-slate-200'}`}>
+              <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{stats.neutralCount}</span>
+              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Neutral</span>
             </div>
           </div>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-400 text-sm backdrop-blur-md">
-            <AlertCircle className="w-4 h-4 shadow-rose-500/20" />
-            <span className="font-medium tracking-tight font-mono">{error}</span>
+          <div className={`mb-6 p-4 border rounded-2xl flex items-center gap-3 text-sm backdrop-blur-md transition-all ${isDarkMode ? 'bg-rose-500/10 border-rose-500/20 text-rose-400 font-mono' : 'bg-rose-50 border-rose-200 text-rose-600 font-sans'}`}>
+            <AlertCircle className={`w-4 h-4 ${isDarkMode ? 'shadow-rose-500/20' : ''}`} />
+            <span className="font-medium tracking-tight whitespace-pre-wrap">{error}</span>
           </div>
         )}
 
@@ -518,16 +538,16 @@ export default function App() {
             {loading && <div className="text-[10px] font-bold text-indigo-400 animate-pulse tracking-[0.2em]">SYNCHRONIZING...</div>}
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex p-1 bg-white/5 rounded-xl border border-white/10">
+            <div className={`flex p-1 rounded-xl border transition-all duration-300 ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-100 border-slate-200'}`}>
               <button 
                 onClick={() => setView('table')}
-                className={`p-1.5 rounded-lg transition-all ${view === 'table' ? 'bg-white/10 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                className={`p-1.5 rounded-lg transition-all ${view === 'table' ? (isDarkMode ? 'bg-white/10 text-white shadow-lg' : 'bg-white text-slate-950 shadow-sm') : 'text-slate-500 hover:text-slate-300'}`}
               >
                 <TableIcon className="w-4 h-4" />
               </button>
               <button 
                 onClick={() => setView('grid')}
-                className={`p-1.5 rounded-lg transition-all ${view === 'grid' ? 'bg-white/10 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                className={`p-1.5 rounded-lg transition-all ${view === 'grid' ? (isDarkMode ? 'bg-white/10 text-white shadow-lg' : 'bg-white text-slate-950 shadow-sm') : 'text-slate-500 hover:text-slate-300'}`}
               >
                 <LayoutGrid className="w-4 h-4" />
               </button>
@@ -536,32 +556,32 @@ export default function App() {
         </div>
 
         {view === 'table' ? (
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden flex flex-col shadow-2xl shadow-black/40 w-full">
+          <div className={`backdrop-blur-xl border rounded-2xl overflow-hidden flex flex-col shadow-2xl transition-all duration-300 w-full ${isDarkMode ? 'bg-white/5 border-white/10 shadow-black/40' : 'bg-white border-slate-200 shadow-slate-200/50'}`}>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse font-mono min-w-[550px] lg:min-w-0 table-fixed">
                 <thead>
-                  <tr className="border-b border-white/10 bg-slate-900/50 text-[9px] md:text-[10px] uppercase tracking-tighter md:tracking-wider font-bold text-slate-400">
-                    <th className="px-1 md:px-4 py-2.5 sticky-col whitespace-nowrap w-[25%] font-mono">
+                  <tr className={`border-b text-[9px] md:text-[10px] uppercase tracking-tighter md:tracking-wider font-bold transition-all duration-300 ${isDarkMode ? 'border-white/10 bg-slate-900/50 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                    <th className={`px-1 md:px-4 py-2.5 sticky left-0 z-10 backdrop-blur-md whitespace-nowrap w-[25%] font-mono transition-all duration-300 ${isDarkMode ? 'bg-slate-950/80 border-r border-white/10' : 'bg-white/80 border-r border-slate-200'}`}>
                       <div className="flex items-center gap-1 md:gap-3">
                         <span className="w-4 md:w-8 text-right pr-1 md:pr-2 border-r border-white/10 shrink-0">#</span>
                         <div className="flex-1 flex justify-center">
                           <div className="relative inline-block text-left" ref={sectorRef}>
                             <button 
                               onClick={(e) => { e.stopPropagation(); setShowSectorDropdown(!showSectorDropdown); }}
-                              className="bg-transparent text-[9px] md:text-[10px] font-bold uppercase tracking-tighter text-slate-400 hover:text-white transition-colors flex items-center gap-1 interactive-target"
+                              className={`bg-transparent text-[9px] md:text-[10px] font-bold uppercase tracking-tighter transition-colors flex items-center gap-1 interactive-target ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                             >
                               <Filter className="w-2.5 h-2.5" />
                               Asset
                             </button>
 
                             {showSectorDropdown && (
-                              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-56 bg-slate-900 border border-white/10 rounded-xl shadow-2xl p-2 z-50 backdrop-blur-xl max-h-64 overflow-y-auto">
-                                <div className="px-3 py-1 mb-1 text-[8px] font-black uppercase text-slate-500 tracking-widest border-b border-white/5 text-center">Filter by Sector</div>
+                              <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-3 w-56 border rounded-xl shadow-2xl p-2 z-50 backdrop-blur-xl max-h-64 overflow-y-auto transition-all ${isDarkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                                <div className={`px-3 py-1 mb-1 text-[8px] font-black uppercase tracking-widest border-b text-center ${isDarkMode ? 'text-slate-500 border-white/5' : 'text-slate-400 border-slate-100'}`}>Filter by Sector</div>
                                 {stats.sectors.map((sector) => (
                                   <button
                                     key={sector}
                                     onClick={(e) => { e.stopPropagation(); toggleSectorFilter(sector); }}
-                                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-[9px] font-bold uppercase tracking-wider text-slate-400 hover:text-white hover:bg-white/5 transition-all group/opt interactive-target"
+                                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all group/opt interactive-target ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-white/5' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}`}
                                   >
                                     <span className={sectorFilters.includes(sector) ? 'text-indigo-400' : ''}>{sector}</span>
                                     {sectorFilters.includes(sector) && <Check className="w-3 h-3 text-indigo-400" />}
@@ -574,7 +594,7 @@ export default function App() {
                       </div>
                     </th>
                     <th 
-                      className="px-1 md:px-4 py-3 cursor-pointer hover:text-white transition-colors whitespace-nowrap w-[15%] text-center"
+                      className={`px-1 md:px-4 py-3 cursor-pointer transition-colors whitespace-nowrap w-[15%] text-center ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
                       onClick={() => handleSort('marketCap')}
                     >
                       Cap
@@ -584,19 +604,19 @@ export default function App() {
                         <div className="relative inline-block text-left" ref={signalRef}>
                           <button 
                             onClick={(e) => { e.stopPropagation(); setShowFilterDropdown(!showFilterDropdown); }}
-                            className="bg-transparent text-[9px] md:text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-white transition-colors flex items-center gap-1 interactive-target"
+                            className={`bg-transparent text-[9px] md:text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1 interactive-target ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
                           >
                             <Filter className="w-2.5 h-2.5" />
                             Signal
                           </button>
 
                           {showFilterDropdown && (
-                            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-48 bg-slate-900 border border-white/10 rounded-xl shadow-2xl p-2 z-50 backdrop-blur-xl">
+                            <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-3 w-48 border rounded-xl shadow-2xl p-2 z-50 backdrop-blur-xl transition-all ${isDarkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
                               {['Standard Buy', 'Value Pullback', 'Sell Section', 'Neutral'].map((option) => (
                                 <button
                                   key={option}
                                   onClick={(e) => { e.stopPropagation(); toggleSignalFilter(option); }}
-                                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-white hover:bg-white/5 transition-all group/opt interactive-target"
+                                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all group/opt interactive-target ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-white/5' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}`}
                                 >
                                   <span className={signalFilters.includes(option) ? 'text-indigo-400' : ''}>{option}</span>
                                   {signalFilters.includes(option) && <Check className="w-3 h-3 text-indigo-400" />}
@@ -609,20 +629,20 @@ export default function App() {
                     </th>
                     <th className="px-1 md:px-4 py-3 whitespace-nowrap w-[15%] text-center">Trend</th>
                     <th 
-                      className="px-1 md:px-4 py-3 cursor-pointer hover:text-white transition-colors whitespace-nowrap w-[15%] text-center"
+                      className={`px-1 md:px-4 py-3 cursor-pointer transition-colors whitespace-nowrap w-[15%] text-center ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
                       onClick={() => handleSort('rsi')}
                     >
                       RSI
                     </th>
                     <th 
-                      className="px-1 md:px-4 py-3 text-center cursor-pointer hover:text-white transition-colors whitespace-nowrap w-[10%]"
+                      className={`px-1 md:px-4 py-3 text-center cursor-pointer transition-colors whitespace-nowrap w-[10%] ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
                       onClick={() => handleSort('change')}
                     >
                       %
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody className={`divide-y transition-all duration-300 ${isDarkMode ? 'divide-white/5' : 'divide-slate-200'}`}>
                   <AnimatePresence mode="popLayout">
                     {filteredStocks.map((stock) => (
                       <motion.tr 
@@ -630,19 +650,19 @@ export default function App() {
                         layout
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className="group hover:bg-white/5 transition-colors cursor-pointer border-l-2 border-l-transparent hover:border-l-indigo-500"
+                        className={`group transition-colors cursor-pointer border-l-2 border-l-transparent hover:border-l-indigo-500 ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
                         onClick={() => handleChartRedirect(stock.symbol)}
                       >
-                        <td className="px-1 md:px-4 py-2.5 sticky-col whitespace-nowrap">
+                        <td className={`px-1 md:px-4 py-2.5 sticky left-0 z-10 backdrop-blur-md whitespace-nowrap transition-all duration-300 ${isDarkMode ? 'bg-slate-950/80' : 'bg-white/80 border-r border-slate-100/50'}`}>
                           <div className="flex items-center gap-1 md:gap-3">
-                            <span className="text-[9px] md:text-[10px] text-slate-600 font-black w-4 md:w-8 text-right pr-1 md:pr-2 border-r border-white/10 shrink-0">{stock.mcRank}</span>
+                            <span className={`text-[9px] md:text-[10px] font-black w-4 md:w-8 text-right pr-1 md:pr-2 border-r shrink-0 ${isDarkMode ? 'text-slate-600 border-white/10' : 'text-slate-400 border-slate-200'}`}>{stock.mcRank}</span>
                             <div className="flex-1 flex flex-col items-center">
-                              <span className="text-[11px] md:text-sm font-black text-white group-hover:text-indigo-400 transition-colors uppercase tracking-tighter">{stock.symbol}</span>
+                              <span className={`text-[11px] md:text-sm font-black group-hover:text-indigo-400 transition-colors uppercase tracking-tighter ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{stock.symbol}</span>
                               <span className="text-[8px] md:text-[9px] text-indigo-400/60 font-bold uppercase truncate max-w-[60px] md:max-w-none">{stock.sector}</span>
                             </div>
                           </div>
                         </td>
-                        <td className="px-1 md:px-4 py-3 text-[10px] md:text-[11px] text-slate-300 font-bold whitespace-nowrap text-center">
+                        <td className={`px-1 md:px-4 py-3 text-[10px] md:text-[11px] font-bold whitespace-nowrap text-center ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                           {formatMarketCap(stock.marketCap)}
                         </td>
                         <td className="px-1 md:px-4 py-3 text-center">
@@ -652,21 +672,21 @@ export default function App() {
                           <div className={`text-[10px] md:text-[11px] font-black uppercase tracking-tighter ${stock.maFast > stock.maSlow ? 'text-emerald-400' : 'text-rose-400'}`}>
                             {stock.maFast > stock.maSlow ? 'Bull' : 'Bear'}
                           </div>
-                          <div className="text-[8px] md:text-[9px] text-slate-600 mt-0.5 whitespace-nowrap hidden sm:block">{stock.maFast.toFixed(0)}/{stock.maSlow.toFixed(0)}</div>
+                          <div className={`text-[8px] md:text-[9px] mt-0.5 whitespace-nowrap hidden sm:block ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>{stock.maFast.toFixed(0)}/{stock.maSlow.toFixed(0)}</div>
                         </td>
                         <td className="px-1 md:px-4 py-3">
                           <div className="flex items-center justify-center gap-1.5 md:gap-2">
-                            <div className="w-10 md:w-24 h-1 bg-slate-900 rounded-full overflow-hidden shrink-0 hidden sm:block">
+                            <div className={`w-10 md:w-24 h-1 rounded-full overflow-hidden shrink-0 hidden sm:block ${isDarkMode ? 'bg-slate-900' : 'bg-slate-200'}`}>
                               <div 
                                 style={{ width: `${Math.min(100, Math.max(0, stock.rsi))}%` }}
-                                className={`h-full ${stock.rsi >= 50 ? 'bg-indigo-500' : 'bg-slate-700'}`}
+                                className={`h-full ${stock.rsi >= 50 ? 'bg-indigo-500' : (isDarkMode ? 'bg-slate-700' : 'bg-slate-400')}`}
                               />
                             </div>
-                            <span className="text-[9px] md:text-[10px] font-bold text-slate-400">{stock.rsi.toFixed(0)}</span>
+                            <span className={`text-[9px] md:text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{stock.rsi.toFixed(0)}</span>
                           </div>
                         </td>
                         <td className="px-1 md:px-4 py-3 text-center">
-                          <div className={`text-[10px] md:text-xs font-bold ${stock.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          <div className={`text-[10px] md:text-xs font-bold ${stock.change >= 0 ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-600')}`}>
                             {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(1)}%
                           </div>
                         </td>
@@ -677,16 +697,16 @@ export default function App() {
               </table>
               {filteredStocks.length === 0 && !loading && (
                 <div className="p-12 md:p-24 text-center">
-                  <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-white/10 shadow-xl">
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 border shadow-xl transition-all ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200 shadow-slate-100'}`}>
                     <Search className="w-8 h-8 text-slate-600" />
                   </div>
-                  <h3 className="text-white font-bold tracking-tight text-sm">No Active Assets Found</h3>
+                  <h3 className={`font-bold tracking-tight text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>No Active Assets Found</h3>
                   <p className="text-[10px] text-slate-500 mt-2 font-mono uppercase tracking-[0.2em] max-w-xs mx-auto">Adjust search parameters or refresh data link.</p>
                 </div>
               )}
             </div>
             
-            <div className="h-10 border-t border-white/10 flex items-center justify-between px-4 md:px-6 bg-slate-900/30">
+            <div className={`h-10 border-t flex items-center justify-between px-4 md:px-6 transition-all duration-300 ${isDarkMode ? 'border-white/10 bg-slate-900/30' : 'border-slate-200 bg-slate-50'}`}>
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
                 <span className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Live Stream Active</span>
@@ -707,23 +727,23 @@ export default function App() {
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   onClick={() => handleChartRedirect(stock.symbol)}
-                  className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5 md:p-6 hover:bg-white/10 transition-all group relative overflow-hidden text-left cursor-pointer interactive-target"
+                  className={`backdrop-blur-xl border rounded-2xl p-5 md:p-6 transition-all group relative overflow-hidden text-left cursor-pointer interactive-target ${isDarkMode ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-white border-slate-200 hover:border-indigo-200 shadow-xl shadow-slate-200/40 '}`}
                 >
                   <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                    <TrendingUp className="w-16 h-16 text-white" />
+                    <TrendingUp className={`w-16 h-16 ${isDarkMode ? 'text-white' : 'text-slate-900'}`} />
                   </div>
                   
                   <div className="flex justify-between items-start mb-5 relative z-10">
                     <div className="text-left">
                       <div className="flex items-baseline gap-2">
-                        <h3 className="font-mono text-xl font-black text-white group-hover:text-indigo-400 transition-colors leading-none tracking-tighter">{stock.symbol}</h3>
-                        <span className="text-[10px] font-black text-white/20">#{stock.mcRank}</span>
+                        <h3 className={`font-mono text-xl font-black group-hover:text-indigo-400 transition-colors leading-none tracking-tighter ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{stock.symbol}</h3>
+                        <span className="text-[10px] font-black opacity-20">#{stock.mcRank}</span>
                       </div>
                       <p className="text-[10px] text-slate-500 mt-2 uppercase font-bold tracking-widest truncate max-w-[120px]">{stock.name}</p>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-black text-white tracking-widest">${stock.price.toFixed(2)}</div>
-                      <div className={`text-[10px] font-bold mt-1 ${stock.change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <div className={`text-sm font-black tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>${stock.price.toFixed(2)}</div>
+                      <div className={`text-[10px] font-bold mt-1 ${stock.change >= 0 ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-600')}`}>
                         {stock.change >= 0 ? '↑' : '↓'} {Math.abs(stock.change).toFixed(2)}%
                       </div>
                     </div>
@@ -731,20 +751,20 @@ export default function App() {
 
                   <div className="space-y-4 mb-5 relative text-left">
                     <div className="space-y-2">
-                      <div className="flex justify-between items-center text-[9px] uppercase tracking-[0.2em] font-black text-slate-500 border-b border-white/5 pb-1">
+                      <div className={`flex justify-between items-center text-[9px] uppercase tracking-[0.2em] font-black border-b pb-1 ${isDarkMode ? 'text-slate-500 border-white/5' : 'text-slate-400 border-slate-100'}`}>
                         <span>Trend Signal</span>
-                        <span className={stock.maFast > stock.maSlow ? 'text-emerald-400' : 'text-rose-400'}>
+                        <span className={stock.maFast > stock.maSlow ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-600')}>
                           {stock.maFast > stock.maSlow ? 'Golden Cross' : 'Death Cross'}
                         </span>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
-                        <div className="bg-slate-900/50 border border-white/5 p-2 rounded-lg py-1.5">
+                        <div className={`border p-2 rounded-lg py-1.5 ${isDarkMode ? 'bg-slate-900/50 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
                           <div className="text-[8px] text-slate-600 uppercase">SMA 50</div>
-                          <div className="text-white font-bold">{stock.maFast.toFixed(1)}</div>
+                          <div className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{stock.maFast.toFixed(1)}</div>
                         </div>
-                        <div className="bg-slate-900/50 border border-white/5 p-2 rounded-lg py-1.5">
+                        <div className={`border p-2 rounded-lg py-1.5 ${isDarkMode ? 'bg-slate-900/50 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
                           <div className="text-[8px] text-slate-600 uppercase">SMA 200</div>
-                          <div className="text-white font-bold">{stock.maSlow.toFixed(1)}</div>
+                          <div className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{stock.maSlow.toFixed(1)}</div>
                         </div>
                       </div>
                     </div>
@@ -752,13 +772,13 @@ export default function App() {
                     <div className="pt-1 text-left">
                       <div className="flex justify-between items-center mb-1.5">
                         <span className="text-[9px] uppercase tracking-[0.2em] font-black text-slate-500">RSI Intensity</span>
-                        <span className="text-[10px] font-bold text-white">{stock.rsi.toFixed(1)}</span>
+                        <span className={`text-[10px] font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{stock.rsi.toFixed(1)}</span>
                       </div>
-                      <div className="h-1 bg-slate-900 rounded-full overflow-hidden shrink-0">
+                      <div className={`h-1 rounded-full overflow-hidden shrink-0 ${isDarkMode ? 'bg-slate-900' : 'bg-slate-200'}`}>
                         <motion.div 
                           initial={{ width: 0 }}
                           animate={{ width: `${stock.rsi}%` }}
-                          className={`h-full ${stock.rsi >= 50 ? 'bg-indigo-500' : 'bg-slate-700'}`}
+                          className={`h-full ${stock.rsi >= 50 ? 'bg-indigo-500' : (isDarkMode ? 'bg-slate-700' : 'bg-slate-400')}`}
                         />
                       </div>
                     </div>
@@ -775,7 +795,7 @@ export default function App() {
 
 
         {symbols.length === 0 && loading && (
-          <div className="p-20 text-center text-slate-500 font-mono text-[10px] uppercase tracking-widest backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10">
+          <div className={`p-20 text-center font-mono text-[10px] uppercase tracking-widest backdrop-blur-xl rounded-2xl border transition-all ${isDarkMode ? 'bg-white/5 border-white/10 text-slate-500' : 'bg-white border-slate-200 text-slate-400 shadow-xl shadow-slate-200/50'}`}>
             Initialising core modules...
           </div>
         )}
@@ -784,26 +804,26 @@ export default function App() {
 
       {/* Footer Branding */}
       <footer className="mt-12 md:mt-20">
-        <div className="max-w-7xl mx-auto px-6 md:px-8 py-10 md:py-16 border-t border-white/10 flex flex-col md:flex-row justify-between items-start md:items-center gap-8 opacity-40 hover:opacity-100 transition-opacity">
+        <div className={`max-w-7xl mx-auto px-6 md:px-8 py-10 md:py-16 border-t flex flex-col md:flex-row justify-between items-start md:items-center gap-8 opacity-40 hover:opacity-100 transition-opacity ${isDarkMode ? 'border-white/10' : 'border-slate-200'}`}>
           <div className="space-y-4 max-w-sm text-left">
             <div className="flex items-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
-              <h4 className="text-[10px] md:text-[11px] font-black text-white uppercase tracking-[0.3em]">System Manifest</h4>
+              <h4 className={`text-[10px] md:text-[11px] font-black uppercase tracking-[0.3em] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>System Manifest</h4>
             </div>
-            <p className="text-[10px] md:text-[11px] leading-relaxed text-slate-400 font-medium">This interface visualizes algorithmic decision zones derived from multi-period market metrics. Logic is server-authoritative and processed in real-time batches.</p>
+            <p className={`text-[10px] md:text-[11px] leading-relaxed font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>This interface visualizes algorithmic decision zones derived from multi-period market metrics. Logic is server-authoritative and processed in real-time batches.</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 md:gap-12 text-left w-full md:w-auto">
             <div className="space-y-2 md:space-y-3">
               <h5 className="text-[8px] md:text-[9px] font-black text-indigo-400 uppercase tracking-widest">Macro Delta</h5>
-              <p className="text-[9px] md:text-[10px] text-slate-300">SMA Cross Detection</p>
+              <p className={`text-[9px] md:text-[10px] ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>SMA Cross Detection</p>
             </div>
             <div className="space-y-2 md:space-y-3">
               <h5 className="text-[8px] md:text-[9px] font-black text-indigo-400 uppercase tracking-widest">Relative Force</h5>
-              <p className="text-[9px] md:text-[10px] text-slate-300">RSI Pulse Analysis</p>
+              <p className={`text-[9px] md:text-[10px] ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>RSI Pulse Analysis</p>
             </div>
             <div className="space-y-2 md:space-y-3">
               <h5 className="text-[8px] md:text-[9px] font-black text-indigo-400 uppercase tracking-widest">Decision Logic</h5>
-              <p className="text-[9px] md:text-[10px] text-slate-300">Zone Calibration</p>
+              <p className={`text-[9px] md:text-[10px] ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Zone Calibration</p>
             </div>
           </div>
         </div>
