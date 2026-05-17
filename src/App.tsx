@@ -582,12 +582,12 @@ export default function App() {
         </div>
 
         {view === 'table' ? (
-          <div className={`backdrop-blur-xl border rounded-2xl overflow-hidden flex flex-col shadow-2xl transition-all duration-300 w-full ${isDarkMode ? 'bg-white/5 border-white/10 shadow-black/40' : 'bg-white border-slate-200 shadow-slate-200/50'}`}>
-            <div className="overflow-x-auto">
+          <div className={`backdrop-blur-xl border rounded-2xl flex flex-col shadow-2xl transition-all duration-300 w-full ${isDarkMode ? 'bg-white/5 border-white/10 shadow-black/40' : 'bg-white border-slate-200 shadow-slate-200/50'}`}>
+            <div className="overflow-x-auto rounded-t-2xl">
               <table className="w-full text-left border-collapse font-mono min-w-[550px] lg:min-w-0 table-fixed">
                 <thead>
                   <tr className={`border-b text-[9px] md:text-[10px] uppercase tracking-tighter md:tracking-wider font-bold transition-all duration-300 ${isDarkMode ? 'border-white/10 bg-slate-900/50 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
-                    <th className={`px-1 md:px-4 py-2.5 sticky left-0 z-10 backdrop-blur-md whitespace-nowrap w-[25%] font-mono transition-all duration-300 ${isDarkMode ? 'bg-slate-950/80 border-r border-white/10' : 'bg-white/80 border-r border-slate-200'}`}>
+                    <th className={`px-1 md:px-4 py-2.5 sticky left-0 backdrop-blur-md whitespace-nowrap w-[25%] font-mono transition-all duration-300 ${showSectorDropdown ? 'z-50' : 'z-30'} ${isDarkMode ? 'bg-slate-950/80 border-r border-white/10' : 'bg-white/80 border-r border-slate-200'}`}>
                       <div className="flex items-center gap-1 md:gap-3">
                         <span className="w-4 md:w-8 text-right pr-1 md:pr-2 border-r border-white/10 shrink-0">#</span>
                         <div className="flex-1 flex justify-center">
@@ -601,7 +601,7 @@ export default function App() {
                             </button>
 
                             {showSectorDropdown && (
-                              <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-3 w-56 border rounded-xl shadow-2xl p-2 z-50 backdrop-blur-xl max-h-64 overflow-y-auto transition-all ${isDarkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                              <div className={`absolute top-full left-0 mt-3 w-56 border rounded-xl shadow-2xl p-2 z-[100] backdrop-blur-xl max-h-64 overflow-y-auto transition-all ${isDarkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
                                 <div className={`px-3 py-1 mb-1 text-[8px] font-black uppercase tracking-widest border-b text-center ${isDarkMode ? 'text-slate-500 border-white/5' : 'text-slate-400 border-slate-100'}`}>Filter by Sector</div>
                                 {stats.sectors.map((sector) => (
                                   <button
@@ -625,7 +625,7 @@ export default function App() {
                     >
                       Cap
                     </th>
-                    <th className="px-1 md:px-4 py-3 text-center group relative z-10 whitespace-nowrap w-[20%]">
+                    <th className={`px-1 md:px-4 py-3 text-center group relative whitespace-nowrap w-[20%] transition-all ${showFilterDropdown ? 'z-50' : 'z-20'}`}>
                       <div className="flex items-center justify-center gap-1">
                         <div className="relative inline-block text-left" ref={signalRef}>
                           <button 
@@ -637,7 +637,7 @@ export default function App() {
                           </button>
 
                           {showFilterDropdown && (
-                            <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-3 w-48 border rounded-xl shadow-2xl p-2 z-50 backdrop-blur-xl transition-all ${isDarkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                            <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-3 w-48 border rounded-xl shadow-2xl p-2 z-[100] backdrop-blur-xl transition-all ${isDarkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
                               {['Standard Buy', 'Value Pullback', 'Sell Section', 'Neutral'].map((option) => (
                                 <button
                                   key={option}
@@ -679,7 +679,7 @@ export default function App() {
                         className={`group transition-colors cursor-pointer border-l-2 border-l-transparent hover:border-l-indigo-500 ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
                         onClick={() => handleChartRedirect(stock.symbol)}
                       >
-                        <td className={`px-1 md:px-4 py-2.5 sticky left-0 z-10 backdrop-blur-md whitespace-nowrap transition-all duration-300 ${isDarkMode ? 'bg-slate-950/80' : 'bg-white/80 border-r border-slate-100/50'}`}>
+                        <td className={`px-1 md:px-4 py-2.5 sticky left-0 backdrop-blur-md whitespace-nowrap transition-all duration-300 z-30 ${isDarkMode ? 'bg-slate-950/80' : 'bg-white/80 border-r border-slate-100/50'}`}>
                           <div className="flex items-center gap-1 md:gap-3">
                             <span className={`text-[9px] md:text-[10px] font-black w-4 md:w-8 text-right pr-1 md:pr-2 border-r shrink-0 ${isDarkMode ? 'text-slate-600 border-white/10' : 'text-slate-400 border-slate-200'}`}>{stock.mcRank}</span>
                             <div className="flex-1 flex flex-col items-center">
