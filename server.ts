@@ -143,61 +143,90 @@ let cachedStockList: any[] = [];
 let lastStockListCacheTime = 0;
 const STOCK_LIST_TTL = 15 * 60 * 1000; // 15 mins
 
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", vercel: process.env.VERCEL });
+});
+
 app.get("/api/stocks", async (req, res) => {
   if (cachedStockList.length > 0 && Date.now() - lastStockListCacheTime < STOCK_LIST_TTL) {
     return res.json(cachedStockList);
   }
 
-  try {
-    // Fetch from multiple categories to get a broader list
-    const screeners = [
-      "most_actives", "day_gainers", "day_losers", 
-      "growth_technology_stocks", "undervalued_large_caps"
-    ];
-
-    const results = await Promise.allSettled(
-      screeners.map(id => yfQueue.add(() => (yahooFinance as any).screener({ scrIds: id, count: 100 }, undefined, { validateResult: false })))
-    );
-
-    const allQuotes: any[] = [];
-    results.forEach(r => {
-      if (r.status === 'fulfilled' && r.value && (r.value as any).quotes) {
-        allQuotes.push(...(r.value as any).quotes);
-      }
-    });
-
-    try {
-      const coreQuotes = await yfQueue.add(() => yahooFinance.quote(CORE_SYMBOLS, undefined, { validateResult: false }).catch(() => []));
-      if (Array.isArray(coreQuotes)) allQuotes.push(...coreQuotes);
-    } catch (e) {
-      console.warn("Core quotes fetch failed");
-    }
-
-    // Deduplicate by symbol and populate quote cache
-    const uniqueStocksMap = new Map();
-    allQuotes.forEach((q: any) => {
-      if (q && q.symbol && !uniqueStocksMap.has(q.symbol)) {
-        uniqueStocksMap.set(q.symbol, {
-          symbol: q.symbol,
-          marketCap: q.marketCap || 0,
-          name: q.longName || q.shortName || q.symbol
-        });
-        // Seed the quote cache to save a per-symbol request later
-        quoteCache[q.symbol] = { data: q, timestamp: Date.now() };
-      }
-    });
-
-    // Sort by Market Cap descending and take top 150
-    const stockList = Array.from(uniqueStocksMap.values())
-      .sort((a, b) => b.marketCap - a.marketCap)
-      .slice(0, 150);
-
-    cachedStockList = stockList;
+  // Define a fallback function for timeouts
+  const fallbackResponse = () => {
+    const fallbackList = CORE_SYMBOLS.map(symbol => ({
+      symbol,
+      marketCap: 1000000000,
+      name: symbol
+    }));
+    cachedStockList = fallbackList;
     lastStockListCacheTime = Date.now();
-    res.json(stockList);
+    return res.json(fallbackList);
+  };
+
+  try {
+    const fetchStocksTask = async () => {
+      // Fetch from multiple categories to get a broader list
+      const screeners = process.env.VERCEL 
+        ? ["most_actives", "day_gainers"] 
+        : ["most_actives", "day_gainers", "day_losers", "growth_technology_stocks", "undervalued_large_caps"];
+
+      const results = await Promise.allSettled(
+        screeners.map(id => yfQueue.add(() => (yahooFinance as any).screener({ scrIds: id, count: process.env.VERCEL ? 30 : 100 }, undefined, { validateResult: false })))
+      );
+
+      const allQuotes: any[] = [];
+      results.forEach(r => {
+        // Vercel has 10s limits, so handle failures
+        if (r.status === 'fulfilled' && r.value && (r.value as any).quotes) {
+          allQuotes.push(...(r.value as any).quotes);
+        }
+      });
+
+      try {
+        const coreQuotes = await yfQueue.add(() => yahooFinance.quote(CORE_SYMBOLS, undefined, { validateResult: false }).catch(() => []));
+        if (Array.isArray(coreQuotes)) allQuotes.push(...coreQuotes);
+      } catch (e) {
+        console.warn("Core quotes fetch failed");
+      }
+
+      if (allQuotes.length === 0) {
+        throw new Error("Empty quotes");
+      }
+
+      // Deduplicate by symbol and populate quote cache
+      const uniqueStocksMap = new Map();
+      allQuotes.forEach((q: any) => {
+        if (q && q.symbol && !uniqueStocksMap.has(q.symbol)) {
+          uniqueStocksMap.set(q.symbol, {
+            symbol: q.symbol,
+            marketCap: q.marketCap || 0,
+            name: q.longName || q.shortName || q.symbol
+          });
+          // Seed the quote cache to save a per-symbol request later
+          quoteCache[q.symbol] = { data: q, timestamp: Date.now() };
+        }
+      });
+
+      // Sort by Market Cap descending and take top 150
+      const stockList = Array.from(uniqueStocksMap.values())
+        .sort((a, b) => b.marketCap - a.marketCap)
+        .slice(0, 150);
+
+      cachedStockList = stockList;
+      lastStockListCacheTime = Date.now();
+      return stockList;
+    };
+
+    // Vercel serverless has 10s limit, we time out after 6 seconds
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 6000));
+    const stockList = await Promise.race([fetchStocksTask(), timeoutPromise]);
+    
+    return res.json(stockList);
+
   } catch (error) {
     console.error("Error fetching stocks:", error);
-    res.status(500).json({ error: "Failed to fetch top stocks" });
+    return fallbackResponse();
   }
 });
 
@@ -364,47 +393,53 @@ app.post("/api/analysis/batch", async (req, res) => {
   }
 
   try {
-    const missingQuotes = symbols.filter(s => !quoteCache[s] || (Date.now() - quoteCache[s].timestamp) > META_CACHE_TTL);
-    if (missingQuotes.length > 0) {
-      const chunks = [];
-      for (let i = 0; i < missingQuotes.length; i += 50) {
-        chunks.push(missingQuotes.slice(i, i + 50));
+    const fetchBatchTask = async () => {
+      const missingQuotes = symbols.filter(s => !quoteCache[s] || (Date.now() - quoteCache[s].timestamp) > META_CACHE_TTL);
+      if (missingQuotes.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < missingQuotes.length; i += 20) {
+          chunks.push(missingQuotes.slice(i, i + 20));
+        }
+        
+        await Promise.allSettled(chunks.map(chunk => 
+          yfQueue.add(() => yahooFinance.quote(chunk, undefined, { validateResult: false }).then((results: any[]) => {
+            if (Array.isArray(results)) {
+              results.forEach((q: any) => {
+                if (q && q.symbol) quoteCache[q.symbol] = { data: q, timestamp: Date.now() };
+              });
+            }
+          }).catch(() => []), 3000)
+        ));
       }
-      
-      await Promise.allSettled(chunks.map(chunk => 
-        yfQueue.add(() => yahooFinance.quote(chunk, undefined, { validateResult: false }).then((results: any[]) => {
-          if (Array.isArray(results)) {
-            results.forEach((q: any) => {
-              if (q && q.symbol) quoteCache[q.symbol] = { data: q, timestamp: Date.now() };
-            });
-          }
-        }).catch(() => []), 10000)
-      ));
-    }
 
-    const missingSummaries = symbols.filter(s => !summaryCache[s] || (Date.now() - summaryCache[s].timestamp) > META_CACHE_TTL);
-    if (missingSummaries.length > 0) {
-      await Promise.allSettled(missingSummaries.map(sym => 
-        yfQueue.add(() => yahooFinance.quoteSummary(sym, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
-          if (res) {
-            summaryCache[sym] = { data: res, timestamp: Date.now() };
-          }
-        }).catch(() => null), 4000)
-      ));
-    }
-
-    const analysisPromises = symbols.map(async (sym) => {
-      try {
-        return await getAnalysis(sym, timeframe);
-      } catch (e: any) {
-        return null;
+      const missingSummaries = symbols.filter(s => !summaryCache[s] || (Date.now() - summaryCache[s].timestamp) > META_CACHE_TTL);
+      if (missingSummaries.length > 0) {
+        await Promise.allSettled(missingSummaries.map(sym => 
+          yfQueue.add(() => yahooFinance.quoteSummary(sym, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
+            if (res) {
+              summaryCache[sym] = { data: res, timestamp: Date.now() };
+            }
+          }).catch(() => null), 3000)
+        ));
       }
-    });
 
-    const settledResults = await Promise.allSettled(analysisPromises);
-    const results = settledResults.map(r => r.status === 'fulfilled' ? r.value : null);
+      const analysisPromises = symbols.map(async (sym) => {
+        try {
+          return await getAnalysis(sym, timeframe);
+        } catch (e: any) {
+          return null;
+        }
+      });
 
-    res.json(results.filter(r => r !== null));
+      const settledResults = await Promise.allSettled(analysisPromises);
+      return settledResults.map(r => r.status === 'fulfilled' ? r.value : null).filter(r => r !== null);
+    };
+
+    const timeoutLimit = new Promise<any[]>((_, r) => setTimeout(() => r([]), 7000));
+    
+    // We race the batch task against a 7 second timeout so we never hit Vercel's 10s ceiling
+    const results = await Promise.race([fetchBatchTask(), timeoutLimit]);
+    res.json(results);
   } catch (error: any) {
     res.status(500).json({ error: "Batch analysis failed", details: error.message });
   }
