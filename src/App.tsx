@@ -198,20 +198,24 @@ export default function App() {
       if (window.scrollY === 0) {
         const delta = e.touches[0].clientY - touchStart.current;
         if (delta > 0) {
-          setPullY(Math.min(delta * 0.35, 80));
+          setPullY(Math.min(delta * 0.4, 100));
+          // Provide some visual feedback during pull
+          if (delta > 20 && e.cancelable) {
+            // e.preventDefault(); // Don't block scroll completely yet
+          }
         }
       }
     };
 
     const onTouchEnd = () => {
-      if (pullY >= 70 && !loading) {
+      if (pullY >= 80 && !loading) {
         fetchStocks();
       }
       setPullY(0);
     };
 
-    window.addEventListener('touchstart', onTouchStart);
-    window.addEventListener('touchmove', onTouchMove);
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
     window.addEventListener('touchend', onTouchEnd);
 
     return () => {
@@ -222,26 +226,34 @@ export default function App() {
   }, [pullY, loading]);
 
   const handleChartRedirect = (symbol: string) => {
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    const webUrl = `https://www.tradingview.com/chart/?symbol=${symbol}`;
-    // The symbol/ scheme is often used for universal links/app opening
-    const appUrl = `tradingview://symbol/${symbol}`;
+    const userAgent = navigator.userAgent || navigator.vendor;
+    const isAndroid = /android/i.test(userAgent);
+    const isIOS = /iPhone|iPad|iPod/i.test(userAgent);
+    const webUrl = `https://www.tradingview.com/chart/?symbol=${symbol.toUpperCase()}`;
+    
+    // For Android, use the Intent system which is highly reliable for specific app navigation
+    if (isAndroid) {
+      const intentUrl = `intent://www.tradingview.com/chart/?symbol=${symbol.toUpperCase()}#Intent;scheme=https;package=com.tradingview.tradingviewapp;end`;
+      window.location.href = intentUrl;
+      return;
+    }
 
-    if (isMobile) {
-      // Direct navigation to appUrl. If the app is installed, the OS will usually 
-      // intercept this. If not, it might show an error. 
-      // A common pattern is to try to open the app scheme and then fallback.
+    // For iOS, Universal Links usually work best if triggered via location.href
+    // However, we can try the direct scheme first
+    if (isIOS) {
+      const appUrl = `tradingview://chart?symbol=${symbol.toUpperCase()}`;
       window.location.href = appUrl;
       
-      // Fallback to web after a short delay if the app didn't open (and thus the page didn't hide)
       setTimeout(() => {
         if (document.visibilityState === 'visible') {
-          window.open(webUrl, '_blank');
+          window.location.href = webUrl;
         }
-      }, 1500);
-    } else {
-      window.open(webUrl, '_blank');
+      }, 1200);
+      return;
     }
+
+    // Desktop
+    window.open(webUrl, '_blank');
   };
 
   const rankedStocks = useMemo(() => {
@@ -346,11 +358,13 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500/30 overflow-x-hidden relative">
       {/* Pull to Refresh Indicator */}
       <div 
+        id="pull-refresh-indicator"
         className="fixed top-0 left-0 w-full z-[100] flex items-center justify-center pointer-events-none transition-transform"
-        style={{ transform: `translateY(${pullY - 40}px)`, opacity: pullY > 10 ? 1 : 0 }}
+        style={{ transform: `translateY(${pullY - 50}px)`, opacity: pullY > 15 ? 1 : 0 }}
       >
-        <div className="bg-indigo-600 rounded-full p-2 shadow-2xl shadow-indigo-500/40 border border-white/20">
-          <RefreshCcw className={`w-4 h-4 text-white ${loading || pullY > 70 ? 'animate-spin' : ''}`} />
+        <div className="bg-indigo-600 rounded-full p-2.5 shadow-2xl shadow-indigo-500/50 border border-white/20 flex items-center gap-2">
+          <RefreshCcw className={`w-4 h-4 text-white ${loading || pullY >= 80 ? 'animate-spin' : ''}`} />
+          {pullY >= 80 && !loading && <span className="text-[8px] font-black text-white uppercase tracking-widest pr-1">Release to Sync</span>}
         </div>
       </div>
       {/* Frosted Glass Background Accents */}
