@@ -166,8 +166,16 @@ app.get("/api/stocks", async (req, res) => {
 
   try {
     const fetchStocksTask = async () => {
-      // Fetch from multiple categories to get a broader list targeting large caps
-      const screeners = ["most_actives", "undervalued_large_caps", "growth_technology_stocks", "day_gainers"];
+      // Fetch from multiple categories to get a broader list targeting top market caps
+      const screeners = [
+        "most_actives", 
+        "undervalued_large_caps", 
+        "growth_technology_stocks", 
+        "day_gainers",
+        "day_losers",
+        "undervalued_growth_stocks",
+        "most_shorted_stocks"
+      ];
 
       const results = await Promise.allSettled(
         screeners.map(id => yfQueue.add(() => (yahooFinance as any).screener({ scrIds: id, count: 250 }, undefined, { validateResult: false })))
@@ -215,8 +223,8 @@ app.get("/api/stocks", async (req, res) => {
       return stockList;
     };
 
-    // Vercel serverless has 10s limit, we time out after 8.5 seconds to allow for overhead
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8500));
+    // Vercel serverless has 10s limit, we time out after 9.0 seconds to allow for overhead
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 9000));
     const stockList = await Promise.race([fetchStocksTask(), timeoutPromise]);
     
     return res.json(stockList);
