@@ -184,11 +184,48 @@ export default function App() {
     setLoading(false);
   };
 
+  const [pullY, setPullY] = useState(0);
+  const touchStart = useRef(0);
+
+  useEffect(() => {
+    const onTouchStart = (e: TouchEvent) => {
+      if (window.scrollY === 0) {
+        touchStart.current = e.touches[0].clientY;
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (window.scrollY === 0) {
+        const delta = e.touches[0].clientY - touchStart.current;
+        if (delta > 0) {
+          setPullY(Math.min(delta * 0.35, 80));
+        }
+      }
+    };
+
+    const onTouchEnd = () => {
+      if (pullY >= 70 && !loading) {
+        fetchStocks();
+      }
+      setPullY(0);
+    };
+
+    window.addEventListener('touchstart', onTouchStart);
+    window.addEventListener('touchmove', onTouchMove);
+    window.addEventListener('touchend', onTouchEnd);
+
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [pullY, loading]);
+
   const handleChartRedirect = (symbol: string) => {
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     const webUrl = `https://www.tradingview.com/chart/?symbol=${symbol}`;
-    // The tvscan scheme is often more reliable for triggering the chart view in some app versions
-    const appUrl = `tradingview://tvscan?symbol=${symbol}`;
+    // The symbol/ scheme is often used for universal links/app opening
+    const appUrl = `tradingview://symbol/${symbol}`;
 
     if (isMobile) {
       // Direct navigation to appUrl. If the app is installed, the OS will usually 
@@ -307,6 +344,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500/30 overflow-x-hidden relative">
+      {/* Pull to Refresh Indicator */}
+      <div 
+        className="fixed top-0 left-0 w-full z-[100] flex items-center justify-center pointer-events-none transition-transform"
+        style={{ transform: `translateY(${pullY - 40}px)`, opacity: pullY > 10 ? 1 : 0 }}
+      >
+        <div className="bg-indigo-600 rounded-full p-2 shadow-2xl shadow-indigo-500/40 border border-white/20">
+          <RefreshCcw className={`w-4 h-4 text-white ${loading || pullY > 70 ? 'animate-spin' : ''}`} />
+        </div>
+      </div>
       {/* Frosted Glass Background Accents */}
       <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/20 rounded-full blur-[120px]"></div>
