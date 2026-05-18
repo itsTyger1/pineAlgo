@@ -3,7 +3,7 @@ import YahooFinance from 'yahoo-finance2';
 const yahooFinance = new YahooFinance();
 
 async function testLimit() {
-  const counts = [500, 250, 100, 50];
+  const counts = [400, 300, 250];
   for (const count of counts) {
     try {
       console.log(`Testing count: ${count}`);

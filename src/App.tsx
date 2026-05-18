@@ -260,7 +260,7 @@ export default function App() {
       chunks.push(list.slice(i, i + batchSize));
     }
 
-    const maxConcurrentBatches = 2; // Further reduced to avoid overwhelming the server queue
+    const maxConcurrentBatches = 1; // Sequential to avoid overwhelming the server queue
     const activeRequests = new Set();
     const remainingChunks = [...chunks];
 
@@ -286,7 +286,7 @@ export default function App() {
                 await new Promise(r => setTimeout(r, Math.random() * 300));
                 
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 30000); // Increased timeout
+                const timeoutId = setTimeout(() => controller.abort(), 60000); // Increased timeout to 60s
 
                 const response = await fetch('/api/analysis/batch', {
                   method: 'POST',
@@ -783,14 +783,19 @@ export default function App() {
                         layout
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className={`group transition-colors cursor-pointer border-l-2 border-l-transparent hover:border-l-indigo-500 ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
-                        onClick={() => handleChartRedirect(stock.symbol)}
+                        className={`group transition-colors border-l-2 border-l-transparent hover:border-l-indigo-500 ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
                       >
                         <td className={`px-1 md:px-4 py-2.5 sticky left-0 backdrop-blur-md whitespace-nowrap transition-all duration-300 z-30 ${isDarkMode ? 'bg-slate-950/80' : 'bg-white/80 border-r border-slate-100/50'}`}>
                           <div className="flex items-center gap-1 md:gap-3">
                             <span className={`text-[9px] md:text-[10px] font-black w-4 md:w-8 text-right pr-1 md:pr-2 border-r shrink-0 ${isDarkMode ? 'text-slate-600 border-white/10' : 'text-slate-400 border-slate-200'}`}>{stock.mcRank}</span>
                             <div className="flex-1 flex flex-col items-center">
-                              <span className={`text-[11px] md:text-sm font-black group-hover:text-indigo-400 transition-colors uppercase tracking-tighter ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{stock.symbol}</span>
+                              <a 
+                                href="#" 
+                                onClick={(e) => { e.preventDefault(); handleChartRedirect(stock.symbol); }}
+                                className={`text-[11px] md:text-sm font-black group-hover:text-indigo-400 transition-colors uppercase tracking-tighter underline ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                              >
+                                {stock.symbol}
+                              </a>
                               <span className="text-[8px] md:text-[9px] text-indigo-400/60 font-bold uppercase truncate max-w-[60px] md:max-w-none">{stock.sector}</span>
                             </div>
                           </div>

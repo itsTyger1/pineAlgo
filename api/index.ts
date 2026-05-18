@@ -53,8 +53,8 @@ function calculateRSI(data: number[], length: number): number | null {
 class RequestQueue {
   private queue: { fn: () => Promise<any>, resolve: (v: any) => void, reject: (e: any) => void, timeout: number }[] = [];
   private activeCount = 0;
-  private maxConcurrency = 12; // Moderate concurrency for stability
-  private delayMs = 40; // Conservative delay
+  private maxConcurrency = 8; // Reduced concurrency for better stability
+  private delayMs = 60; // Slightly higher base delay
 
   async add<T>(fn: () => Promise<T>, timeoutMs = 25000): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -184,14 +184,16 @@ app.get("/api/stocks", async (req, res) => {
         screeners.map(id => yfQueue.add(() => (yahooFinance as any).screener({ scrIds: id, count: 250 }, undefined, { validateResult: false }).catch(() => ({ quotes: [] }))))
       );
 
+
       const allQuotes: any[] = [];
       results.forEach(r => {
         if (r.status === 'fulfilled' && r.value && (r.value as any).quotes) {
           allQuotes.push(...(r.value as any).quotes);
         }
       });
-
+      
       // Try for core quotes too
+      /*
       try {
         const coreQuotes = await fetchQuoteWithRetry(CORE_SYMBOLS);
         if (Array.isArray(coreQuotes)) {
@@ -200,6 +202,7 @@ app.get("/api/stocks", async (req, res) => {
       } catch (e) {
         console.warn("Core quotes fetch failed");
       }
+      */
 
       if (allQuotes.length === 0) {
         // One last desperate attempt: just use CORE_SYMBOLS as symbols if all screeners failed
@@ -234,8 +237,8 @@ app.get("/api/stocks", async (req, res) => {
       return stockList;
     };
 
-    // Vercel serverless has 10s limit, we time out after 8.5 seconds to allow for fallback return
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8500));
+    // Vercel serverless has 10s limit, we time out after 25 seconds to allow for more data fetching
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 25000));
     const stockList = await Promise.race([fetchStocksTask(), timeoutPromise]);
     
     return res.json(stockList);
@@ -284,11 +287,11 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
 
 async function fetchSingleQuoteWithRetry(symbols: string | string[]) {
   let retryCount = 0;
-  const maxRetries = 5; // Increased retries for higher reliability
+  const maxRetries = 7; // Increased retries for higher reliability
   while (retryCount <= maxRetries) {
     try {
       // Increased timeout to allow for network variability
-      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 12000);
+      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 20000); // Increased timeout
       if (q) return q;
       throw new Error("Empty quote response");
     } catch (e: any) {
@@ -302,8 +305,8 @@ async function fetchSingleQuoteWithRetry(symbols: string | string[]) {
         return null;
       }
       // Exponential backoff with jitter - slightly more aggressive initial pause
-      const backoff = Math.pow(2, retryCount) * 600;
-      const jitter = Math.random() * 300;
+      const backoff = Math.pow(2, retryCount) * 800; // Increased backoff
+      const jitter = Math.random() * 500;
       await new Promise(r => setTimeout(r, backoff + jitter));
     }
   }
@@ -359,11 +362,11 @@ async function getAnalysis(symbol: string, timeframe: string) {
 
   let chartResult;
   let chartRetryCount = 0;
-  const maxChartRetries = 3;
+  const maxChartRetries = 5; // Increased chart retries
   
   while (chartRetryCount <= maxChartRetries) {
     try {
-      chartResult = await yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }), 7000);
+      chartResult = await yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }), 15000); // Increased timeout to 15s
       if (chartResult && chartResult.quotes && chartResult.quotes.length > 0) {
         break; // Success
       }
@@ -375,8 +378,8 @@ async function getAnalysis(symbol: string, timeframe: string) {
         chartResult = { quotes: [] };
       } else {
         // Exponential backoff for charts too
-        const chartBackoff = Math.pow(2, chartRetryCount) * 500;
-        await new Promise(r => setTimeout(r, chartBackoff + Math.random() * 200));
+        const chartBackoff = Math.pow(2, chartRetryCount) * 800; // Increased backoff
+        await new Promise(r => setTimeout(r, chartBackoff + Math.random() * 500));
       }
     }
   }
