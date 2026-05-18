@@ -9,6 +9,7 @@
 html, body {
     @apply h-full bg-slate-950;
     overflow-x: hidden;
+    overscroll-behavior-y: contain;
   }
 
   body {

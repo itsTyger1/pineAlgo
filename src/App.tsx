@@ -336,12 +336,20 @@ export default function App() {
     const scrollThreshold = 80;
 
     const onTouchStart = (e: TouchEvent) => {
-      if (window.scrollY <= 0) {
+      // Capture if we are at the top at the EXACT moment touch begins
+      const scrollPos = window.scrollY || document.documentElement.scrollTop;
+      if (scrollPos <= 0) {
         touchStart.current = e.touches[0].clientY;
+      } else {
+        // Mark as invalid for pull-to-refresh if we start below the top
+        touchStart.current = -1;
       }
     };
 
     const onTouchMove = (e: TouchEvent) => {
+      // If the touch didn't start at the top, never trigger pull-to-refresh for this gesture
+      if (touchStart.current === -1) return;
+
       const scrollPos = window.scrollY || document.documentElement.scrollTop;
       
       if (scrollPos <= 0) {
@@ -364,11 +372,12 @@ export default function App() {
     };
 
     const onTouchEnd = () => {
-      if (currentPullY >= scrollThreshold && !loading) {
+      if (touchStart.current !== -1 && currentPullY >= scrollThreshold && !loading) {
         fetchStocks();
       }
       currentPullY = 0;
       setPullY(0);
+      touchStart.current = -1;
     };
 
     // Use passive: false so we CAN prevent default browser pull-to-refresh if needed
