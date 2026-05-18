@@ -328,93 +328,6 @@ export default function App() {
     });
   };
 
-  const [pullY, setPullY] = useState(0);
-  const touchStart = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    let currentPullY = 0;
-    const scrollThreshold = 80;
-
-    const onTouchStart = (e: TouchEvent) => {
-      // Capture if we are at the top at the EXACT moment touch begins
-      const scrollPos = window.scrollY || document.documentElement.scrollTop;
-      // Stricter check for "top" to account for sub-pixel offsets
-      if (scrollPos <= 1) {
-        touchStart.current = {
-          x: e.touches[0].clientX,
-          y: e.touches[0].clientY
-        };
-      } else {
-        // Mark as invalid for pull-to-refresh if we start below the top
-        touchStart.current = { x: -1, y: -1 };
-      }
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      // If the touch didn't start at the top, never trigger pull-to-refresh for this gesture
-      if (touchStart.current.y === -1) return;
-
-      const currentX = e.touches[0].clientX;
-      const currentY = e.touches[0].clientY;
-      const deltaY = currentY - touchStart.current.y;
-      const deltaX = currentX - touchStart.current.x;
-      
-      // If the first significant movement is UPWARDS (swipe up to scroll down)
-      // or HORIZONTAL (swiping sideways), invalidate immediately.
-      if (currentPullY === 0) {
-        if (deltaY < -5 || Math.abs(deltaX) > Math.abs(deltaY) + 10) {
-          touchStart.current = { x: -1, y: -1 };
-          return;
-        }
-      }
-
-      const scrollPos = window.scrollY || document.documentElement.scrollTop;
-      
-      // We only care about pulling if we are locked to the top
-      if (scrollPos <= 2) {
-        if (deltaY > 0) {
-          // If we are pulling down, update visual state
-          currentPullY = Math.min(deltaY * 0.4, 100);
-          setPullY(currentPullY);
-          
-          // Prevent browser default pull-to-refresh or scrolling once we've committed to a pull
-          if (currentPullY > 5 && e.cancelable) {
-            e.preventDefault();
-          }
-        } else {
-          // If they pull back up, reset
-          currentPullY = 0;
-          setPullY(0);
-        }
-      } else {
-        // If they managed to scroll down while "pulling", cancel it
-        currentPullY = 0;
-        setPullY(0);
-        touchStart.current = { x: -1, y: -1 };
-      }
-    };
-
-    const onTouchEnd = () => {
-      if (touchStart.current.y !== -1 && currentPullY >= scrollThreshold && !loading) {
-        fetchStocks();
-      }
-      currentPullY = 0;
-      setPullY(0);
-      touchStart.current = { x: -1, y: -1 };
-    };
-
-    // Use passive: false so we CAN prevent default browser pull-to-refresh if needed
-    window.addEventListener('touchstart', onTouchStart, { passive: true });
-    window.addEventListener('touchmove', onTouchMove, { passive: false });
-    window.addEventListener('touchend', onTouchEnd);
-
-    return () => {
-      window.removeEventListener('touchstart', onTouchStart);
-      window.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('touchend', onTouchEnd);
-    };
-  }, [loading]); // Only re-bind if loading state changes (to capture correct fetchStocks ref if needed, though fetchStocks is likely stable)
-
   const handleChartRedirect = (symbol: string) => {
     const userAgent = navigator.userAgent || navigator.vendor;
     const isAndroid = /android/i.test(userAgent);
@@ -546,17 +459,6 @@ export default function App() {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 font-sans selection:bg-indigo-500/30 relative ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
-      {/* Pull to Refresh Indicator */}
-      <div 
-        id="pull-refresh-indicator"
-        className="fixed top-0 left-0 w-full z-[100] flex items-center justify-center pointer-events-none transition-transform"
-        style={{ transform: `translateY(${pullY - 50}px)`, opacity: pullY > 15 ? 1 : 0 }}
-      >
-        <div className={`rounded-full p-2.5 shadow-2xl flex items-center gap-2 transition-all duration-300 ${isDarkMode ? 'bg-indigo-600 border-white/20 shadow-indigo-500/50 text-white' : 'bg-white border-slate-200 shadow-slate-200 text-indigo-600 border'}`}>
-          <RefreshCcw className={`w-4 h-4 ${loading || pullY >= 80 ? 'animate-spin' : ''}`} />
-          {pullY >= 80 && !loading && <span className={`text-[8px] font-black uppercase tracking-widest pr-1 ${isDarkMode ? 'text-white' : 'text-indigo-600'}`}>Release to Sync</span>}
-        </div>
-      </div>
       {/* Frosted Glass Background Accents */}
       <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none">
         <div className={`absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full blur-[120px] ${isDarkMode ? 'bg-blue-600/20' : 'bg-blue-600/10'}`}></div>
