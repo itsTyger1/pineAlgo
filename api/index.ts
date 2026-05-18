@@ -53,8 +53,8 @@ function calculateRSI(data: number[], length: number): number | null {
 class RequestQueue {
   private queue: { fn: () => Promise<any>, resolve: (v: any) => void, reject: (e: any) => void, timeout: number }[] = [];
   private activeCount = 0;
-  private maxConcurrency = 10; // Increased concurrency to handle volume
-  private delayMs = 30; // Reduced delay as we have concurrency and dynamic backoff
+  private maxConcurrency = 30; // Significantly increased for faster parallel processing
+  private delayMs = 15; // Faster turnaround between requests
 
   async add<T>(fn: () => Promise<T>, timeoutMs = 25000): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -137,6 +137,7 @@ const CORE_SYMBOLS = [
 const quoteCache: Record<string, { data: any, timestamp: number }> = {};
 const summaryCache: Record<string, { data: any, timestamp: number }> = {};
 const META_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const SUMMARY_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours for sectors/profiles
 
 // Cache for screener output
 let cachedStockList: any[] = [];
@@ -399,34 +400,28 @@ app.post("/api/analysis/batch", async (req, res) => {
 
   try {
     const fetchBatchTask = async () => {
+      // 1. Fetch missing quotes in one go (batch optimized)
       const missingQuotes = symbols.filter(s => !quoteCache[s] || (Date.now() - quoteCache[s].timestamp) > META_CACHE_TTL);
-      if (missingQuotes.length > 0) {
-        const chunks = [];
-        for (let i = 0; i < missingQuotes.length; i += 20) {
-          chunks.push(missingQuotes.slice(i, i + 20));
-        }
-        
-        await Promise.allSettled(chunks.map(chunk => 
-          yfQueue.add(() => yahooFinance.quote(chunk, undefined, { validateResult: false }).then((results: any[]) => {
+      const quotePromise = missingQuotes.length > 0 
+        ? yfQueue.add(() => yahooFinance.quote(missingQuotes, undefined, { validateResult: false }).then((results: any[]) => {
             if (Array.isArray(results)) {
               results.forEach((q: any) => {
                 if (q && q.symbol) quoteCache[q.symbol] = { data: q, timestamp: Date.now() };
               });
             }
-          }).catch(() => []), 3000)
-        ));
-      }
+          }).catch(() => []), 5000)
+        : Promise.resolve();
 
-      const missingSummaries = symbols.filter(s => !summaryCache[s] || (Date.now() - summaryCache[s].timestamp) > META_CACHE_TTL);
-      if (missingSummaries.length > 0) {
-        await Promise.allSettled(missingSummaries.map(sym => 
-          yfQueue.add(() => yahooFinance.quoteSummary(sym, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
-            if (res) {
-              summaryCache[sym] = { data: res, timestamp: Date.now() };
-            }
-          }).catch(() => null), 3000)
-        ));
-      }
+      // 2. Fetch missing summaries (parallel but limited) - use long cache
+      const missingSummaries = symbols.filter(s => !summaryCache[s] || (Date.now() - summaryCache[s].timestamp) > SUMMARY_CACHE_TTL);
+      const summaryPromises = missingSummaries.slice(0, 10).map(sym => 
+        yfQueue.add(() => yahooFinance.quoteSummary(sym, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
+          if (res) summaryCache[sym] = { data: res, timestamp: Date.now() };
+        }).catch(() => null), 3000)
+      );
+
+      // Wait for core metadata before analysis
+      await Promise.all([quotePromise, ...summaryPromises]);
 
       const analysisPromises = symbols.map(async (sym) => {
         try {
@@ -440,7 +435,7 @@ app.post("/api/analysis/batch", async (req, res) => {
       return settledResults.map(r => r.status === 'fulfilled' ? r.value : null).filter(r => r !== null);
     };
 
-    const timeoutLimit = new Promise<any[]>((_, r) => setTimeout(() => r([]), 7000));
+    const timeoutLimit = new Promise<any[]>((_, r) => setTimeout(() => r([]), 9000));
     
     // We race the batch task against a 7 second timeout so we never hit Vercel's 10s ceiling
     const results = await Promise.race([fetchBatchTask(), timeoutLimit]);

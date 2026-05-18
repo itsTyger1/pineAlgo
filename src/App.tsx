@@ -43,6 +43,7 @@ export default function App() {
   const [symbols, setSymbols] = useState<{symbol: string, marketCap: number}[]>([]);
   const [stocks, setStocks] = useState<Record<string, StockAnalysis>>({});
   const [loading, setLoading] = useState(true);
+  const [analyzedCount, setAnalyzedCount] = useState(0);
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'grid' | 'table'>('table');
   const [error, setError] = useState<string | null>(null);
@@ -143,6 +144,7 @@ export default function App() {
     try {
       setLoading(true);
       setError(null);
+      setAnalyzedCount(0);
       const data = await fetchWithRetry('/api/stocks');
       if (Array.isArray(data)) {
         setSymbols(data);
@@ -162,8 +164,9 @@ export default function App() {
 
   const fetchAllAnalysis = async (list: string[], currentTF: string) => {
     setLoading(true);
-    // Smaller batches to avoid Vercel 10s serverless function timeout
-    const batchSize = 10;
+    setAnalyzedCount(0);
+    // Dynamic batch size based on platform
+    const batchSize = window.location.hostname.includes('localhost') ? 25 : 12;
     const chunks = [];
     for (let i = 0; i < list.length; i += batchSize) {
       chunks.push(list.slice(i, i + batchSize));
@@ -171,7 +174,7 @@ export default function App() {
 
     let failCount = 0;
     // Process batches with limited concurrency on the client
-    const maxConcurrentBatches = 3;
+    const maxConcurrentBatches = 4;
     const activeRequests = new Set();
     const remainingChunks = [...chunks];
 
@@ -191,15 +194,15 @@ export default function App() {
           const promise = (async () => {
             let success = false;
             let retryCount = 0;
-            const maxRetries = 2;
+            const maxRetries = 1;
 
             while (!success && retryCount <= maxRetries) {
               try {
-                // Staggered delay to avoid burst
-                await new Promise(r => setTimeout(r, Math.random() * 200));
+                // Low-latency staggered delay
+                await new Promise(r => setTimeout(r, Math.random() * 50));
                 
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
 
                 const response = await fetch('/api/analysis/batch', {
                   method: 'POST',
@@ -212,7 +215,7 @@ export default function App() {
 
                 if (!response.ok) {
                   if (response.status === 429) {
-                     await new Promise(r => setTimeout(r, 2000));
+                     await new Promise(r => setTimeout(r, 1500));
                      throw new Error('429');
                   }
                   throw new Error(`HTTP ${response.status}`);
@@ -229,14 +232,11 @@ export default function App() {
                     });
                     return next;
                   });
-                  failCount += (chunk.length - results.length);
+                  setAnalyzedCount(prev => prev + results.length);
                   success = true;
                 }
               } catch (e: any) {
                 retryCount++;
-                if (retryCount > maxRetries) {
-                  failCount += chunk.length;
-                }
               }
             }
           })();
@@ -527,7 +527,32 @@ export default function App() {
           {/* Total Assets Counter */}
           <div className={`flex items-baseline gap-1 md:gap-1.5 pl-2 md:pl-4 border-l font-mono ${isDarkMode ? 'border-white/10' : 'border-slate-200'}`}>
             <span className="text-[8px] md:text-[10px] font-black uppercase text-slate-500 tracking-wider">Analyzed:</span>
-            <span className="text-xs md:text-sm font-black text-indigo-400">{stats.total} <span className="text-[10px] text-slate-500 font-bold">/ {symbols.length || '...'}</span></span>
+            <div className="flex flex-col items-end">
+              <div className="flex items-center gap-1">
+                <AnimatePresence mode="wait">
+                  <motion.span 
+                    key={analyzedCount}
+                    initial={{ y: 5, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    className="text-xs md:text-sm font-black text-indigo-400 tabular-nums shrink-0"
+                  >
+                    {analyzedCount}
+                  </motion.span>
+                </AnimatePresence>
+                <span className="text-xs md:text-sm font-black text-slate-500 tabular-nums shrink-0">
+                   / {symbols.length || '500'}
+                </span>
+              </div>
+              {loading && symbols.length > 0 && (
+                <div className={`w-12 md:w-20 h-1 rounded-full mt-0.5 overflow-hidden border transition-all ${isDarkMode ? 'bg-white/5 border-white/5' : 'bg-slate-100 border-slate-100'}`}>
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(analyzedCount / symbols.length) * 100}%` }}
+                    className="h-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]"
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
