@@ -104,7 +104,7 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'grid' | 'table'>('table');
   const [error, setError] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<'marketCap' | 'change' | 'rsi' | 'zone'>('marketCap');
+  const [sortBy, setSortBy] = useState<'marketCap' | 'change' | 'zone'>('marketCap');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [dSignalFilter, setDSignalFilter] = useState<string[]>([]);
   const [wSignalFilter, setWSignalFilter] = useState<string[]>([]);
@@ -398,7 +398,7 @@ export default function App() {
         maFast: 0,
         maSlow: 0,
         rsi: 0,
-        zone: 'Neutral',
+        zone: 'Neutral Zone',
         sector: 'Unknown',
         industry: 'Unknown',
         lastUpdated: ''
@@ -414,9 +414,9 @@ export default function App() {
     const list = rankedStocks.filter(s => {
       const matchesSearch = s.symbol.toLowerCase().includes(search.toLowerCase()) || 
                             s.name.toLowerCase().includes(search.toLowerCase());
-      const matchesD = dSignalFilter.length === 0 || dSignalFilter.includes(stocksByTimeframe['1d'][s.symbol]?.zone || 'Neutral');
-      const matchesW = wSignalFilter.length === 0 || wSignalFilter.includes(stocksByTimeframe['1wk'][s.symbol]?.zone || 'Neutral');
-      const matchesM = mSignalFilter.length === 0 || mSignalFilter.includes(stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral');
+      const matchesD = dSignalFilter.length === 0 || dSignalFilter.includes(stocksByTimeframe['1d'][s.symbol]?.zone || 'Neutral Zone');
+      const matchesW = wSignalFilter.length === 0 || wSignalFilter.includes(stocksByTimeframe['1wk'][s.symbol]?.zone || 'Neutral Zone');
+      const matchesM = mSignalFilter.length === 0 || mSignalFilter.includes(stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral Zone');
       
       const matchesSector = sectorFilters.length === 0 || sectorFilters.includes(s.sector);
       return matchesSearch && matchesD && matchesW && matchesM && matchesSector;
@@ -426,13 +426,12 @@ export default function App() {
       const factor = sortOrder === 'asc' ? 1 : -1;
       if (sortBy === 'marketCap') return (a.marketCap - b.marketCap) * factor;
       if (sortBy === 'change') return (a.change - b.change) * factor;
-      if (sortBy === 'rsi') return (a.rsi - b.rsi) * factor;
       if (sortBy === 'zone') {
         const weights: Record<string, number> = {
-          'Standard Buy': 1,
-          'Value Pullback': 2,
-          'Sell Section': 3,
-          'Neutral': 4
+          'Buy Zone': 1,
+          'Value Zone': 2,
+          'Sell Zone': 3,
+          'Neutral Zone': 4
         };
         const valA = weights[a.zone] || 4;
         const valB = weights[b.zone] || 4;
@@ -449,7 +448,7 @@ export default function App() {
     return `$${val.toLocaleString()}`;
   };
 
-  const handleSort = (key: 'marketCap' | 'change' | 'rsi' | 'zone') => {
+  const handleSort = (key: 'marketCap' | 'change' | 'zone') => {
     if (sortBy === key) {
       setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
@@ -462,10 +461,10 @@ export default function App() {
     const list = Object.values(stocks) as StockAnalysis[];
     const sectors = Array.from(new Set(list.map(s => s.sector))).filter(Boolean).sort();
     return {
-      buyCount: list.filter(s => s.zone === 'Standard Buy').length,
-      valueCount: list.filter(s => s.zone === 'Value Pullback').length,
-      sellCount: list.filter(s => s.zone === 'Sell Section').length,
-      neutralCount: list.filter(s => !['Standard Buy', 'Value Pullback', 'Sell Section'].includes(s.zone)).length,
+      buyCount: list.filter(s => s.zone === 'Buy Zone').length,
+      valueCount: list.filter(s => s.zone === 'Value Zone').length,
+      sellCount: list.filter(s => s.zone === 'Sell Zone').length,
+      neutralCount: list.filter(s => !['Buy Zone', 'Value Zone', 'Sell Zone'].includes(s.zone)).length,
       total: list.length,
       sectors
     };
@@ -474,23 +473,23 @@ export default function App() {
   const getZoneBadge = (zone: string) => {
     const baseClass = "px-1.5 md:px-3 py-0.5 md:py-1 rounded font-bold uppercase tracking-tighter text-[8px] md:text-[10px] whitespace-nowrap";
     switch (zone) {
-      case 'Standard Buy': 
+      case 'Buy Zone': 
         return (
           <span className={`${baseClass} inline-flex items-center gap-1 transition-all duration-300 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-emerald-50 text-emerald-600 border-emerald-200 border'}`}>
             <TrendingUp className="w-2.5 h-2.5 md:w-3 md:h-3" /> 
-            <span className="hidden md:inline">Standard Buy</span>
+            <span className="hidden md:inline">Buy Zone</span>
             <span className="md:hidden">Buy</span>
           </span>
         );
-      case 'Value Pullback': 
+      case 'Value Zone': 
         return (
           <span className={`${baseClass} inline-flex items-center gap-1 transition-all duration-300 ${isDarkMode ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-amber-50 text-amber-600 border-amber-200 border'}`}>
             <Info className="w-2.5 h-2.5 md:w-3 md:h-3" /> 
-            <span className="hidden md:inline">Value Pullback</span>
+            <span className="hidden md:inline">Value Zone</span>
             <span className="md:hidden">Value</span>
           </span>
         );
-      case 'Sell Section': 
+      case 'Sell Zone': 
         return (
           <span className={`${baseClass} inline-flex items-center gap-1 transition-all duration-300 ${isDarkMode ? 'bg-rose-500/20 text-rose-400 border-rose-500/40' : 'bg-rose-50 text-rose-600 border-rose-200 border'}`}>
             <TrendingDown className="w-2.5 h-2.5 md:w-3 md:h-3" /> 
@@ -499,7 +498,7 @@ export default function App() {
           </span>
         );
       default: 
-        return <span className={`transition-all duration-300 ${baseClass} ${isDarkMode ? 'bg-white/5 text-slate-400 border border-white/10' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>Neutral</span>;
+        return <span className={`transition-all duration-300 ${baseClass} ${isDarkMode ? 'bg-white/5 text-slate-400 border border-white/10' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>Neutral Zone</span>;
     }
   };
 
@@ -627,32 +626,32 @@ export default function App() {
           {/* Breakdown Notification Bar */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 md:gap-2 w-full md:w-auto">
             <button 
-              onClick={() => toggleSignalFilter('1d', 'Standard Buy')}
-              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Standard Buy') ? (isDarkMode ? 'bg-emerald-500/30 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-emerald-100 border-emerald-400') : (isDarkMode ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-emerald-50 text-emerald-600 border-emerald-100')}`}
+              onClick={() => toggleSignalFilter('1d', 'Buy Zone')}
+              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Buy Zone') ? (isDarkMode ? 'bg-emerald-500/30 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-emerald-100 border-emerald-400') : (isDarkMode ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-emerald-50 text-emerald-600 border-emerald-100')}`}
             >
               <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>{stats.buyCount}</span>
-              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-emerald-400/60' : 'text-emerald-600/60'}`}>Standard Buys</span>
+              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-emerald-400/60' : 'text-emerald-600/60'}`}>Buy Zones</span>
             </button>
             <button 
-              onClick={() => toggleSignalFilter('1d', 'Value Pullback')}
-              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Value Pullback') ? (isDarkMode ? 'bg-amber-500/30 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-amber-100 border-amber-400') : (isDarkMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 text-amber-600 border-amber-100')}`}
+              onClick={() => toggleSignalFilter('1d', 'Value Zone')}
+              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Value Zone') ? (isDarkMode ? 'bg-amber-500/30 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-amber-100 border-amber-400') : (isDarkMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 text-amber-600 border-amber-100')}`}
             >
               <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>{stats.valueCount}</span>
-              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-amber-400/60' : 'text-amber-600/60'}`}>Pullbacks</span>
+              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-amber-400/60' : 'text-amber-600/60'}`}>Value Zones</span>
             </button>
             <button 
-              onClick={() => toggleSignalFilter('1d', 'Sell Section')}
-              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Sell Section') ? (isDarkMode ? 'bg-rose-500/30 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : 'bg-rose-100 border-rose-400') : (isDarkMode ? 'bg-rose-500/10 border-rose-500/20' : 'bg-rose-50 text-rose-600 border-rose-100')}`}
+              onClick={() => toggleSignalFilter('1d', 'Sell Zone')}
+              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Sell Zone') ? (isDarkMode ? 'bg-rose-500/30 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : 'bg-rose-100 border-rose-400') : (isDarkMode ? 'bg-rose-500/10 border-rose-500/20' : 'bg-rose-50 text-rose-600 border-rose-100')}`}
             >
               <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-rose-400' : 'text-rose-600'}`}>{stats.sellCount}</span>
               <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-rose-400/60' : 'text-rose-600/60'}`}>Sell Zones</span>
             </button>
             <button 
-              onClick={() => toggleSignalFilter('1d', 'Neutral')}
-              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Neutral') ? (isDarkMode ? 'bg-white/20 border-white/40' : 'bg-slate-200 border-slate-400') : (isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-100 border-slate-200')}`}
+              onClick={() => toggleSignalFilter('1d', 'Neutral Zone')}
+              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Neutral Zone') ? (isDarkMode ? 'bg-white/20 border-white/40' : 'bg-slate-200 border-slate-400') : (isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-100 border-slate-200')}`}
             >
               <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{stats.neutralCount}</span>
-              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Neutral</span>
+              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Neutral Zone</span>
             </button>
           </div>
         </div>
@@ -766,7 +765,7 @@ export default function App() {
                               <div className={`px-3 py-1.5 mb-1 text-[8px] font-black uppercase tracking-widest border-b border-white/5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                                 {tf === '1d' ? 'Daily' : tf === '1wk' ? 'Weekly' : 'Monthly'} Filter
                               </div>
-                              {['Standard Buy', 'Value Pullback', 'Sell Section', 'Neutral'].map((option) => (
+                              {['Buy Zone', 'Value Zone', 'Sell Zone', 'Neutral Zone'].map((option) => (
                                 <button
                                   key={`${tf}-${option}`}
                                   onClick={(e) => { 
@@ -788,15 +787,8 @@ export default function App() {
                         </div>
                       </th>
                     ))}
-                    <th className="px-1 md:px-4 py-3 whitespace-nowrap w-[15%] text-center">Trend</th>
                     <th 
-                      className={`px-1 md:px-4 py-3 cursor-pointer transition-colors whitespace-nowrap w-[15%] text-center ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
-                      onClick={() => handleSort('rsi')}
-                    >
-                      RSI
-                    </th>
-                    <th 
-                      className={`px-1 md:px-4 py-3 text-center cursor-pointer transition-colors whitespace-nowrap w-[10%] ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
+                      className={`px-1 md:px-4 py-3 text-center cursor-pointer transition-colors whitespace-nowrap w-[15%] ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
                       onClick={() => handleSort('marketCap')} /* Temporary placeholder */
                     >
                       Price
@@ -833,30 +825,13 @@ export default function App() {
                         </td>
                         {/* Cell for D, W, M signals */}
                         <td id={`d-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
-                          {getZoneBadge(stocksByTimeframe['1d'][stock.symbol]?.zone || 'Neutral')}
+                          {getZoneBadge(stocksByTimeframe['1d'][stock.symbol]?.zone || 'Neutral Zone')}
                         </td>
                         <td id={`w-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
-                          {getZoneBadge(stocksByTimeframe['1wk'][stock.symbol]?.zone || 'Neutral')}
+                          {getZoneBadge(stocksByTimeframe['1wk'][stock.symbol]?.zone || 'Neutral Zone')}
                         </td>
                         <td id={`m-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
-                          {getZoneBadge(stocksByTimeframe['1mo'][stock.symbol]?.zone || 'Neutral')}
-                        </td>
-                        <td className="px-1 md:px-4 py-3 text-center">
-                          <div className={`text-[10px] md:text-[11px] font-black uppercase tracking-tighter ${stock.maFast > stock.maSlow ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {stock.maFast > stock.maSlow ? 'Bull' : 'Bear'}
-                          </div>
-                          <div className={`text-[8px] md:text-[9px] mt-0.5 whitespace-nowrap hidden sm:block ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>{stock.maFast.toFixed(0)}/{stock.maSlow.toFixed(0)}</div>
-                        </td>
-                        <td className="px-1 md:px-4 py-3">
-                          <div className="flex items-center justify-center gap-1.5 md:gap-2">
-                            <div className={`w-10 md:w-24 h-1 rounded-full overflow-hidden shrink-0 hidden sm:block ${isDarkMode ? 'bg-slate-900' : 'bg-slate-200'}`}>
-                              <div 
-                                style={{ width: `${Math.min(100, Math.max(0, stock.rsi))}%` }}
-                                className={`h-full ${stock.rsi >= 50 ? 'bg-indigo-500' : (isDarkMode ? 'bg-slate-700' : 'bg-slate-400')}`}
-                              />
-                            </div>
-                            <span className={`text-[9px] md:text-[10px] font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{stock.rsi.toFixed(0)}</span>
-                          </div>
+                          {getZoneBadge(stocksByTimeframe['1mo'][stock.symbol]?.zone || 'Neutral Zone')}
                         </td>
                         <td className="px-1 md:px-4 py-3 text-center">
                           <div className={`text-[10px] md:text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>

@@ -125,15 +125,16 @@ const cache: Record<string, { data: any, timestamp: number }> = {};
 const CACHE_TTL = 60 * 60 * 1000; // 60 minutes
 
 const CORE_SYMBOLS = [
-  // Tech & AI
-  "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "ORCL", "ADBE",
-  "PLTR", "AI", "SMCI", "ARM", "TSM", "AMD", "META", "QCOM", "ASML",
-  // Energy (Oil & Gas)
-  "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "HAL", "DVN",
-  // Nuclear & Utilities
-  "CCJ", "CEG", "VST", "SMR", "OKLO", "NNE", "BWXT", "LEU",
-  // Green Energy
-  "FSLR", "ENPH", "NEE", "SEDG"
+  // Top Mega Caps & Tech
+  "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA", "BRK-B", "TSM", "AVGO",
+  "WMT", "JPM", "LLY", "V", "UNH", "XOM", "MA", "JNJ", "PG", "HD", "ORCL", "CVX", "MRK",
+  "ABBV", "COST", "PEP", "ASML", "BAC", "KO", "TMO", "CSCO", "MCD", "CRM", "ABT", "LIN",
+  "NFLX", "AMD", "CMCSA", "TXN", "DHR", "INTC", "MU", "QCOM", "ADBE",
+  // Energy & Utilities
+  "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "HAL", "DVN",
+  "NEE", "CEG", "VST", "SMR", "CCJ",
+  // Others / Industrial / AI
+  "PLTR", "AI", "SMCI", "ARM", "FSLR", "ENPH", "SEDG"
 ];
 
 // Cache for basic stock info to avoid redundant calls
@@ -193,7 +194,6 @@ app.get("/api/stocks", async (req, res) => {
       });
       
       // Try for core quotes too
-      /*
       try {
         const coreQuotes = await fetchQuoteWithRetry(CORE_SYMBOLS);
         if (Array.isArray(coreQuotes)) {
@@ -202,7 +202,6 @@ app.get("/api/stocks", async (req, res) => {
       } catch (e) {
         console.warn("Core quotes fetch failed");
       }
-      */
 
       if (allQuotes.length === 0) {
         // One last desperate attempt: just use CORE_SYMBOLS as symbols if all screeners failed
@@ -393,10 +392,11 @@ async function getAnalysis(symbol: string, timeframe: string) {
   // Fallback map for popular stocks if YF rate limits us on AWS/Vercel
   const SECTOR_MAP: Record<string, string> = {
     "AAPL": "Technology", "MSFT": "Technology", "GOOGL": "Communication", "AMZN": "Consumer", "NVDA": "Technology", "META": "Communication", "TSLA": "Consumer", "AVGO": "Technology", "ORCL": "Technology", "ADBE": "Technology",
-    "PLTR": "Technology", "SMCI": "Technology", "AMD": "Technology", "TSM": "Technology", 
+    "PLTR": "Technology", "SMCI": "Technology", "AMD": "Technology", "TSM": "Technology", "TXN": "Technology", "INTC": "Technology", "QCOM": "Technology", "MU": "Technology",
     "XOM": "Energy", "CVX": "Energy", "COP": "Energy", "OXY": "Energy",
-    "JPM": "Financials", "BAC": "Financials", "WFC": "Financials", "GS": "Financials",
-    "JNJ": "Healthcare", "UNH": "Healthcare", "PFE": "Healthcare", "LLY": "Healthcare"
+    "JPM": "Financials", "BAC": "Financials", "WFC": "Financials", "GS": "Financials", "V": "Financials", "MA": "Financials",
+    "JNJ": "Healthcare", "UNH": "Healthcare", "PFE": "Healthcare", "LLY": "Healthcare", "ABBV": "Healthcare", "MRK": "Healthcare",
+    "WMT": "Consumer", "COST": "Consumer", "HD": "Consumer", "MCD": "Consumer"
   };
 
   if (summary?.assetProfile?.sector) {
@@ -445,10 +445,10 @@ async function getAnalysis(symbol: string, timeframe: string) {
   const isMacroUptrend = maFast !== null && maSlow !== null && (maFast > maSlow);
   const isMacroDowntrend = maFast !== null && maSlow !== null && (maFast < maSlow);
 
-  let zone = "Neutral";
-  if (isMacroUptrend && rsi >= 48) zone = "Standard Buy";
-  else if (isMacroUptrend && rsi <= 45) zone = "Value Pullback";
-  else if (isMacroDowntrend) zone = "Sell Section";
+  let zone = "Neutral Zone";
+  if (isMacroUptrend && rsi >= 48) zone = "Buy Zone";
+  else if (isMacroUptrend && rsi <= 45) zone = "Value Zone";
+  else if (isMacroDowntrend) zone = "Sell Zone";
 
   const data = {
     symbol,
