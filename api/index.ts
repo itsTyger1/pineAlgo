@@ -179,7 +179,7 @@ app.get("/api/stocks", async (req, res) => {
       ];
 
       const results = await Promise.allSettled(
-        screeners.map(id => yfQueue.add(() => (yahooFinance as any).screener({ scrIds: id, count: 250 }, undefined, { validateResult: false })))
+        screeners.map(id => yfQueue.add(() => (yahooFinance as any).screener({ scrIds: id, count: 250 }, undefined, { validateResult: false }).catch(() => ({ quotes: [] }))))
       );
 
       const allQuotes: any[] = [];
@@ -189,15 +189,23 @@ app.get("/api/stocks", async (req, res) => {
         }
       });
 
+      // Try for core quotes too
       try {
         const coreQuotes = await fetchQuoteWithRetry(CORE_SYMBOLS);
-        if (Array.isArray(coreQuotes)) allQuotes.push(...coreQuotes);
+        if (Array.isArray(coreQuotes)) {
+          allQuotes.push(...coreQuotes);
+        }
       } catch (e) {
         console.warn("Core quotes fetch failed");
       }
 
       if (allQuotes.length === 0) {
-        throw new Error("Empty quotes");
+        // One last desperate attempt: just use CORE_SYMBOLS as symbols if all screeners failed
+        return CORE_SYMBOLS.map(symbol => ({
+          symbol,
+          marketCap: 0,
+          name: symbol
+        }));
       }
 
       // Deduplicate by symbol and populate quote cache
@@ -236,13 +244,39 @@ app.get("/api/stocks", async (req, res) => {
   }
 });
 
-// Helper for quote fetching with retry
+// Helper for quote fetching with retry and chunking for reliability
 async function fetchQuoteWithRetry(symbols: string | string[]) {
+  if (typeof symbols === 'string') {
+    return fetchSingleQuoteWithRetry(symbols);
+  }
+
+  // Chunk for arrays to avoid large request failures or rate limits
+  const CHUNK_SIZE = 15;
+  const chunks = [];
+  for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
+    chunks.push(symbols.slice(i, i + CHUNK_SIZE));
+  }
+
+  const allResults: any[] = [];
+  for (const chunk of chunks) {
+    const results = await fetchSingleQuoteWithRetry(chunk);
+    if (Array.isArray(results)) {
+      allResults.push(...results);
+    } else if (results) {
+      allResults.push(results);
+    }
+    // Small delay between chunks to be easy on the API
+    await new Promise(r => setTimeout(r, 50));
+  }
+  return allResults;
+}
+
+async function fetchSingleQuoteWithRetry(symbols: string | string[]) {
   let retryCount = 0;
   const maxRetries = 2;
   while (retryCount <= maxRetries) {
     try {
-      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 5000);
+      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 7000);
       if (q) return q;
       throw new Error("Empty quote response");
     } catch (e: any) {
@@ -251,11 +285,12 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
         if (typeof symbols === 'string') {
           console.warn(`Quote fetch finally failed for ${symbols}`);
         } else {
-          console.warn(`Batch quote fetch failed for ${symbols.length} symbols`);
+          console.warn(`Batch quote fetch failed for subset of ${symbols.length} symbols`);
         }
         return null;
       }
-      await new Promise(r => setTimeout(r, 200 * retryCount));
+      // Exponential backoff
+      await new Promise(r => setTimeout(r, 300 * retryCount));
     }
   }
   return null;

@@ -49,25 +49,41 @@ export default function App() {
   });
   const stocks = useMemo(() => stocksByTimeframe[timeframe] || {}, [stocksByTimeframe, timeframe]);
   const [loading, setLoading] = useState(true);
-  const [countsByTimeframe, setCountsByTimeframe] = useState<Record<string, number>>({
+  const fetchingTimeframes = useRef<Set<string>>(new Set());
+  
+  const [displayedCountsByTimeframe, setDisplayedCountsByTimeframe] = useState<Record<string, number>>({
     '1d': 0, '1wk': 0, '1mo': 0
   });
-  const analyzedCount = countsByTimeframe[timeframe] || 0;
-  const [displayedAnalyzedCount, setDisplayedAnalyzedCount] = useState(0);
 
-  // Smooth incremental counter effect for the "Analyzed" display
+  const analyzedCount = useMemo(() => {
+    const symbolSet = new Set(symbols.map(s => s.symbol));
+    const tfData = stocksByTimeframe[timeframe] || {};
+    // Only count if it's in our current symbols list
+    return Object.keys(tfData).filter(s => symbolSet.has(s)).length;
+  }, [stocksByTimeframe, timeframe, symbols]);
+
+  const displayedAnalyzedCount = displayedCountsByTimeframe[timeframe] || 0;
+
+  // Smooth incremental counter effect for the "Analyzed" display (per timeframe)
   useEffect(() => {
-    if (displayedAnalyzedCount < analyzedCount) {
+    const visual = displayedCountsByTimeframe[timeframe] || 0;
+    
+    if (visual < analyzedCount) {
       const timer = setTimeout(() => {
-        // Increment by 1 for individual digit feel
-        setDisplayedAnalyzedCount(prev => prev + 1);
-      }, 40); // 40ms provides a natural browsing/loading rhythm
+        setDisplayedCountsByTimeframe(prev => ({
+          ...prev,
+          [timeframe]: prev[timeframe] + 1
+        }));
+      }, 30);
       return () => clearTimeout(timer);
-    } else if (displayedAnalyzedCount > analyzedCount) {
-      // Reset immediately if the base count is reset (e.g. refresh)
-      setDisplayedAnalyzedCount(analyzedCount);
+    } else if (visual > analyzedCount) {
+      // Sync immediately if visual exceeds reality (e.g. data cleared or symbols changed)
+      setDisplayedCountsByTimeframe(prev => ({
+        ...prev,
+        [timeframe]: analyzedCount
+      }));
     }
-  }, [analyzedCount, displayedAnalyzedCount]);
+  }, [analyzedCount, timeframe, displayedCountsByTimeframe]);
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'grid' | 'table'>('table');
   const [error, setError] = useState<string | null>(null);
@@ -136,10 +152,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (symbols.length > 0 && Object.keys(stocksByTimeframe[timeframe]).length === 0) {
+    if (symbols.length > 0 && Object.keys(stocksByTimeframe[timeframe]).length === 0 && !fetchingTimeframes.current.has(timeframe)) {
       fetchAllAnalysis(symbols.map(s => s.symbol), timeframe);
     }
-  }, [timeframe, symbols]);
+  }, [timeframe, symbols, stocksByTimeframe]);
 
   // Robust fetch with retry
   const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 2) => {
@@ -166,22 +182,21 @@ export default function App() {
     try {
       setLoading(true);
       setError(null);
-      setCountsByTimeframe({ '1d': 0, '1wk': 0, '1mo': 0 });
+      fetchingTimeframes.current.clear();
+      setDisplayedCountsByTimeframe({ '1d': 0, '1wk': 0, '1mo': 0 });
       const data = await fetchWithRetry('/api/stocks');
       if (Array.isArray(data)) {
         setSymbols(data);
         setStocksByTimeframe({ '1d': {}, '1wk': {}, '1mo': {} });
         
-        // Priority 1: Current timeframe
-        const mainAnalysisPromise = fetchAllAnalysis(data.map(s => s.symbol), timeframe);
+        // fetchAllAnalysis handles its own concurrency and locks
+        // Start current timeframe first
+        await fetchAllAnalysis(data.map(s => s.symbol), timeframe);
         
-        // Priority 2: Other timeframes in background
-        const otherTimeframes = (['1d', '1wk', '1mo'] as const).filter(tf => tf !== timeframe);
-        otherTimeframes.forEach(tf => {
+        // Then start others in background
+        (['1d', '1wk', '1mo'] as const).filter(tf => tf !== timeframe).forEach(tf => {
           fetchAllAnalysis(data.map(s => s.symbol), tf);
         });
-
-        await mainAnalysisPromise;
       } else {
         setError('Failed to fetch stock list');
       }
@@ -195,6 +210,9 @@ export default function App() {
   };
 
   const fetchAllAnalysis = async (list: string[], currentTF: string) => {
+    if (fetchingTimeframes.current.has(currentTF)) return;
+    fetchingTimeframes.current.add(currentTF);
+
     if (currentTF === timeframe) setLoading(true);
     
     // Dynamic batch size
@@ -204,7 +222,6 @@ export default function App() {
       chunks.push(list.slice(i, i + batchSize));
     }
 
-    let failCount = 0;
     const maxConcurrentBatches = 4;
     const activeRequests = new Set();
     const remainingChunks = [...chunks];
@@ -213,6 +230,7 @@ export default function App() {
       const processNext = async () => {
         if (remainingChunks.length === 0 && activeRequests.size === 0) {
           if (currentTF === timeframe) setLoading(false);
+          fetchingTimeframes.current.delete(currentTF);
           resolve();
           return;
         }
@@ -259,10 +277,6 @@ export default function App() {
                     });
                     return { ...prev, [currentTF]: timeframeData };
                   });
-                  setCountsByTimeframe(prev => ({
-                    ...prev,
-                    [currentTF]: prev[currentTF] + results.length
-                  }));
                   success = true;
                 }
               } catch (e: any) {
