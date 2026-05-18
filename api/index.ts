@@ -125,16 +125,23 @@ const cache: Record<string, { data: any, timestamp: number }> = {};
 const CACHE_TTL = 60 * 60 * 1000; // 60 minutes
 
 const CORE_SYMBOLS = [
-  // Top Mega Caps & Tech
   "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA", "BRK-B", "TSM", "AVGO",
   "WMT", "JPM", "LLY", "V", "UNH", "XOM", "MA", "JNJ", "PG", "HD", "ORCL", "CVX", "MRK",
   "ABBV", "COST", "PEP", "ASML", "BAC", "KO", "TMO", "CSCO", "MCD", "CRM", "ABT", "LIN",
-  "NFLX", "AMD", "CMCSA", "TXN", "DHR", "INTC", "MU", "QCOM", "ADBE",
-  // Energy & Utilities
+  "NFLX", "AMD", "CMCSA", "TXN", "DHR", "INTC", "MU", "QCOM", "ADBE", "IBM", "HON", "BA",
   "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "HAL", "DVN",
   "NEE", "CEG", "VST", "SMR", "CCJ",
-  // Others / Industrial / AI
-  "PLTR", "AI", "SMCI", "ARM", "FSLR", "ENPH", "SEDG"
+  "PLTR", "AI", "SMCI", "ARM", "FSLR", "ENPH", "SEDG",
+  "NVO", "NVS", "SAP", "TM", "TMUS", "AZN", "BHP", "SNY", "SONY", "MDT", "RY", "RIO",
+  "C", "GS", "MS", "AXP", "BLK", "SCHW", "MMC", "PGR", "CB", "CME", "UBER", "ABNB", "SHOP",
+  "NOW", "INTU", "PANW", "CRWD", "WDAY", "SNPS", "CDNS", "FTNT", "TEAM", "MDB", "DDOG",
+  "ISRG", "SYK", "VRTX", "BSX", "REGN", "ZTS", "ILMN", "EW", "ALGN", "BIIB", "MRNA", "IDXX",
+  "LMT", "RTX", "GD", "NOC", "GE", "CAT", "DE", "UNP", "UPS", "FDX", "ETN", "EMR", "MMM",
+  "SBUX", "NKE", "TGT", "TJX", "LOW", "BKNG", "CMG", "MAR", "HLT", "LVS", "MGM", "CCL", "RCL",
+  "VZ", "T", "DIS", "WBD", "TMUS", "CHTR", "LYV", "EA", "TTWO", "WPP", "OMC", "IPG",
+  "SQ", "PYPL", "COIN", "HOOD", "AFRM", "UPST", "SOFI", "LC", "NU", "SG", "MELI", "SE",
+  "CRSP", "NTLA", "EDIT", "BEAM", "PACB", "GILD", "BMRN", "VRTX", "INCY", "SGEN", "EXAS",
+  "ALB", "LTHM", "LAC", "SQM", "FCX", "SCCO", "VALE", "CLF", "X", "STLD", "NUE", "RS"
 ];
 
 // Cache for basic stock info to avoid redundant calls
@@ -236,8 +243,8 @@ app.get("/api/stocks", async (req, res) => {
       return stockList;
     };
 
-    // Vercel serverless has 10s limit, we time out after 25 seconds to allow for more data fetching
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 25000));
+    // Vercel serverless has 60s limit with our new config, we time out after 55 seconds
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 55000));
     const stockList = await Promise.race([fetchStocksTask(), timeoutPromise]);
     
     return res.json(stockList);
@@ -524,9 +531,9 @@ app.post("/api/analysis/batch", async (req, res) => {
       return settledResults.map(r => r.status === 'fulfilled' ? r.value : null).filter(r => r !== null);
     };
 
-    const timeoutLimit = new Promise<any[]>((_, r) => setTimeout(() => r([]), 8500));
+    const timeoutLimit = new Promise<any[]>((_, r) => setTimeout(() => r([]), 50000));
     
-    // We race the batch task against a 8.5 second timeout so we never hit Vercel's 10s ceiling
+    // We race the batch task against a 50 second timeout so we never hit Vercel's 60s ceiling
     const results = await Promise.race([fetchBatchTask(), timeoutLimit]);
     res.json(results);
   } catch (error: any) {
