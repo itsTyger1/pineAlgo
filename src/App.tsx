@@ -212,16 +212,23 @@ export default function App() {
       setDisplayedCountsByTimeframe({ '1d': 0, '1wk': 0, '1mo': 0 });
       const data = await fetchWithRetry('/api/stocks');
       if (Array.isArray(data)) {
-        const uniqueData = data.slice(0, 500); // Explicitly cap client side too
+        // Initial cap for better responsiveness and stability
+        const uniqueData = data.slice(0, 250); 
         setSymbols(uniqueData);
         setStocksByTimeframe({ '1d': {}, '1wk': {}, '1mo': {} });
         
-        // Start current timeframe first
-        await fetchAllAnalysis(uniqueData.map(s => s.symbol), activeTimeframeRef.current);
+        const allSymbols = uniqueData.map(s => s.symbol);
         
-        // Then start others in background
-        (['1d', '1wk', '1mo'] as const).filter(tf => tf !== activeTimeframeRef.current).forEach(tf => {
-          fetchAllAnalysis(uniqueData.map(s => s.symbol), tf);
+        // SEQUENCE the loading to avoid overwhelming the server
+        // 1. Current timeframe immediately (non-blocking)
+        fetchAllAnalysis(allSymbols, activeTimeframeRef.current);
+        
+        // 2. Others with a staggered delay to prevent simultaneous massive bursts
+        const others = (['1d', '1wk', '1mo'] as const).filter(tf => tf !== activeTimeframeRef.current);
+        
+        others.forEach(async (tf, index) => {
+          await new Promise(r => setTimeout(r, 1200 * (index + 1))); 
+          fetchAllAnalysis(allSymbols, tf);
         });
       } else {
         setError('Failed to fetch stock list');
@@ -230,7 +237,7 @@ export default function App() {
       setError(`Connection error: ${err.message || 'System calibrating'}. Please wait...`);
       console.error(err);
     } finally {
-      setLoading(false);
+      // Logic for active loading state is handled inside fetchAllAnalysis
       setLastSynced(new Date());
     }
   };
@@ -250,7 +257,7 @@ export default function App() {
       chunks.push(list.slice(i, i + batchSize));
     }
 
-    const maxConcurrentBatches = 6; // Slightly reduced for stability
+    const maxConcurrentBatches = 3; // Reduced concurrency to allow parallel timeframes without overload
     const activeRequests = new Set();
     const remainingChunks = [...chunks];
 

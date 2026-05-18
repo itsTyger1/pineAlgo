@@ -53,8 +53,8 @@ function calculateRSI(data: number[], length: number): number | null {
 class RequestQueue {
   private queue: { fn: () => Promise<any>, resolve: (v: any) => void, reject: (e: any) => void, timeout: number }[] = [];
   private activeCount = 0;
-  private maxConcurrency = 12; // Moderate concurrency for stability
-  private delayMs = 40; // Conservative delay
+  private maxConcurrency = 8; // Reduced for better stability when loading multiple timeframes
+  private delayMs = 60; // Slightly more conservative start delay
 
   async add<T>(fn: () => Promise<T>, timeoutMs = 25000): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -92,8 +92,8 @@ class RequestQueue {
         await new Promise(r => setTimeout(r, this.delayMs));
         this.activeCount--;
         // Recover stability slowly
-        if (this.delayMs > 60) this.delayMs -= 5;
-        if (this.maxConcurrency < 12 && Math.random() > 0.8) this.maxConcurrency++;
+        if (this.delayMs > 70) this.delayMs -= 5;
+        if (this.maxConcurrency < 8 && Math.random() > 0.8) this.maxConcurrency++;
         this.process();
       }
     };
@@ -169,15 +169,12 @@ app.get("/api/stocks", async (req, res) => {
 
   try {
     const fetchStocksTask = async () => {
-      // Fetch from multiple categories to get a broader list targeting top market caps
+      // Fetch from a focused list of categories to stay within timeout limits
       const screeners = [
         "most_actives", 
         "undervalued_large_caps", 
-        "growth_technology_stocks", 
-        "day_gainers",
-        "day_losers",
-        "undervalued_growth_stocks",
-        "most_shorted_stocks"
+        "growth_technology_stocks",
+        "day_gainers"
       ];
 
       const results = await Promise.allSettled(
@@ -191,14 +188,15 @@ app.get("/api/stocks", async (req, res) => {
         }
       });
 
-      // Try for core quotes too
+      // Try for core quotes but only in a single small batch for speed
       try {
-        const coreQuotes = await fetchQuoteWithRetry(CORE_SYMBOLS);
+        const primaryCore = CORE_SYMBOLS.slice(0, 15);
+        const coreQuotes = await fetchSingleQuoteWithRetry(primaryCore);
         if (Array.isArray(coreQuotes)) {
           allQuotes.push(...coreQuotes);
         }
       } catch (e) {
-        console.warn("Core quotes fetch failed");
+        console.warn("Fast core quotes fetch failed");
       }
 
       if (allQuotes.length === 0) {
@@ -234,8 +232,9 @@ app.get("/api/stocks", async (req, res) => {
       return stockList;
     };
 
-    // Vercel serverless has 10s limit, we time out after 9.0 seconds to allow for overhead
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 9000));
+    // Vercel serverless has 10s limit. We use 9.5s to be as generous as possible 
+    // while leaving a tiny safety margin.
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout Discovery')), 9500));
     const stockList = await Promise.race([fetchStocksTask(), timeoutPromise]);
     
     return res.json(stockList);
@@ -252,8 +251,9 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
     return fetchSingleQuoteWithRetry(symbols);
   }
 
-  // Even smaller chunks for maximum reliability
-  const CHUNK_SIZE = 5;
+  // Balanced chunk size for reliability. 
+  // 10 is usually the "sweet spot" for Yahoo Finance's batch quote endpoint stability.
+  const CHUNK_SIZE = 10;
   const chunks = [];
   for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
     chunks.push(symbols.slice(i, i + CHUNK_SIZE));
@@ -263,9 +263,10 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
   for (const chunk of chunks) {
     let results = await fetchSingleQuoteWithRetry(chunk);
     
-    // Fallback: If a small batch fails, try individual requests for each symbol in that batch
+    // Fallback: If a batch fails, try individual requests for each symbol in that batch
+    // as a last-ditch effort to get at least some data.
     if (!results && chunk.length > 1) {
-      console.warn(`Batch failed for ${chunk.join(',')}, falling back to individual requests`);
+      console.warn(`Batch failed for subset, falling back to individual requests`);
       const individualPromises = chunk.map(sym => fetchSingleQuoteWithRetry(sym));
       const individualResults = await Promise.all(individualPromises);
       results = individualResults.filter(r => r !== null);
@@ -276,7 +277,7 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
     } else if (results) {
       allResults.push(results);
     }
-    // Delay between chunks to avoid overwhelming the API
+    // Strategic delay to respect API rate limits
     await new Promise(r => setTimeout(r, 100));
   }
   return allResults;
@@ -284,11 +285,11 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
 
 async function fetchSingleQuoteWithRetry(symbols: string | string[]) {
   let retryCount = 0;
-  const maxRetries = 3; // Increased retries
+  const maxRetries = 4; // Further increased retries for high-volume symbols
   while (retryCount <= maxRetries) {
     try {
-      // Increased timeout to allow for network variability
-      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 9000);
+      // High timeout to cope with Yahoo's variability under high load
+      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 12000);
       if (q) return q;
       throw new Error("Empty quote response");
     } catch (e: any) {
@@ -301,8 +302,8 @@ async function fetchSingleQuoteWithRetry(symbols: string | string[]) {
         }
         return null;
       }
-      // Increased backoff for more stability
-      await new Promise(r => setTimeout(r, 500 * retryCount));
+      // Progressive exponential backoff
+      await new Promise(r => setTimeout(r, 600 * retryCount));
     }
   }
   return null;
