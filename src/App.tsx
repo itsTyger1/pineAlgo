@@ -194,16 +194,6 @@ export default function App() {
     fetchStocks();
   }, []);
 
-  useEffect(() => {
-    const currentCount = Object.keys(stocksByTimeframe[timeframe]).length;
-    // Resume if not started or if symbols list exists but we haven't reached full capacity (with a buffer for failures)
-    const isSignificantlyEmpty = currentCount < (symbols.length * 0.95);
-    
-    if (symbols.length > 0 && isSignificantlyEmpty && !fetchingTimeframes.current.has(timeframe)) {
-      fetchAllAnalysis(symbols.map(s => s.symbol), timeframe);
-    }
-  }, [timeframe, symbols, stocksByTimeframe]);
-
   // Robust fetch with retry
   const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 3) => {
     try {
@@ -604,7 +594,7 @@ export default function App() {
             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${isDarkMode ? 'border-white/10 bg-white/5 text-slate-400' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
               <RefreshCcw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
               <span className="text-[10px] font-bold uppercase tracking-wider">
-                {lastSynced ? `Synced: ${lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Calibrating...'}
+                {lastSynced ? `Synced: ${lastSynced.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Calibrating...'}
               </span>
             </div>
 
@@ -800,11 +790,10 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody className={`divide-y transition-all duration-300 ${isDarkMode ? 'divide-white/5' : 'divide-slate-200'}`}>
-                  <AnimatePresence mode="popLayout">
+                  <AnimatePresence>
                     {filteredStocks.map((stock, index) => (
                       <motion.tr 
                         key={`${stock.symbol}-${index}`}
-                        layout
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         className={`group transition-colors border-l-2 border-l-transparent hover:border-l-indigo-500 ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
