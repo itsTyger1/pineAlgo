@@ -721,7 +721,7 @@ export default function App() {
 
         {view === 'table' ? (
           <div className={`backdrop-blur-xl border rounded-2xl flex flex-col shadow-2xl transition-all duration-300 w-full ${isDarkMode ? 'bg-white/5 border-white/10 shadow-black/40' : 'bg-white border-slate-200 shadow-slate-200/50'}`}>
-            <div className="overflow-x-auto rounded-t-2xl">
+            <div className={`overflow-x-auto rounded-t-2xl ${filteredStocks.length < 4 ? 'min-h-[280px]' : ''}`}>
               <table className="w-full text-left border-collapse font-mono min-w-[550px] lg:min-w-0 table-fixed">
                 <thead>
                   <tr className={`border-b text-[9px] md:text-[10px] uppercase tracking-tighter md:tracking-wider font-bold transition-all duration-300 ${isDarkMode ? 'border-white/10 bg-slate-900/50 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
