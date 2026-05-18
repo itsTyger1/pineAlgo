@@ -106,9 +106,11 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'marketCap' | 'change' | 'rsi' | 'zone'>('marketCap');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [signalFilters, setSignalFilters] = useState<string[]>([]);
+  const [dSignalFilter, setDSignalFilter] = useState<string[]>([]);
+  const [wSignalFilter, setWSignalFilter] = useState<string[]>([]);
+  const [mSignalFilter, setMSignalFilter] = useState<string[]>([]);
+  const [activeSignalDropdown, setActiveSignalDropdown] = useState<'1d' | '1wk' | '1mo' | null>(null);
   const [sectorFilters, setSectorFilters] = useState<string[]>([]);
-  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [showSectorDropdown, setShowSectorDropdown] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
@@ -123,7 +125,9 @@ export default function App() {
     }
     return true;
   });
-  const signalRef = useRef<HTMLDivElement>(null);
+  const dSignalRef = useRef<HTMLDivElement>(null);
+  const wSignalRef = useRef<HTMLDivElement>(null);
+  const mSignalRef = useRef<HTMLDivElement>(null);
   const sectorRef = useRef<HTMLDivElement>(null);
   const activeTimeframeRef = useRef(timeframe);
 
@@ -141,10 +145,18 @@ export default function App() {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (signalRef.current && !signalRef.current.contains(event.target as Node)) {
-        setShowFilterDropdown(false);
+      const target = event.target as Node;
+      
+      const isOutsideDSignal = !dSignalRef.current || !dSignalRef.current.contains(target);
+      const isOutsideWSignal = !wSignalRef.current || !wSignalRef.current.contains(target);
+      const isOutsideMSignal = !mSignalRef.current || !mSignalRef.current.contains(target);
+      const isOutsideSector = !sectorRef.current || !sectorRef.current.contains(target);
+
+      if (isOutsideDSignal && isOutsideWSignal && isOutsideMSignal) {
+        setActiveSignalDropdown(null);
       }
-      if (sectorRef.current && !sectorRef.current.contains(event.target as Node)) {
+      
+      if (isOutsideSector) {
         setShowSectorDropdown(false);
       }
     };
@@ -152,8 +164,9 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const toggleSignalFilter = (filter: string) => {
-    setSignalFilters(prev => 
+  const toggleSignalFilter = (tf: '1d' | '1wk' | '1mo', filter: string) => {
+    const setter = tf === '1d' ? setDSignalFilter : tf === '1wk' ? setWSignalFilter : setMSignalFilter;
+    setter(prev => 
       prev.includes(filter) 
         ? prev.filter(f => f !== filter) 
         : [...prev, filter]
@@ -374,20 +387,39 @@ export default function App() {
   };
 
   const rankedStocks = useMemo(() => {
-    const list = Object.values(stocks) as StockAnalysis[];
-    return list.map(s => ({
-      ...s,
-      mcRank: symbolRanks[s.symbol] || 999
-    }));
-  }, [stocks, symbolRanks]);
+    return symbols.map(s => {
+      // Find the first available analysis for this symbol to provide metadata
+      const analysis = stocksByTimeframe['1d'][s.symbol] || stocksByTimeframe['1wk'][s.symbol] || stocksByTimeframe['1mo'][s.symbol] || {
+        symbol: s.symbol,
+        name: s.symbol,
+        price: 0,
+        change: 0,
+        marketCap: s.marketCap,
+        maFast: 0,
+        maSlow: 0,
+        rsi: 0,
+        zone: 'Neutral',
+        sector: 'Unknown',
+        industry: 'Unknown',
+        lastUpdated: ''
+      };
+      return {
+        ...analysis,
+        mcRank: symbolRanks[s.symbol] || 999
+      };
+    });
+  }, [symbols, stocksByTimeframe, symbolRanks]);
 
   const filteredStocks = useMemo(() => {
     const list = rankedStocks.filter(s => {
       const matchesSearch = s.symbol.toLowerCase().includes(search.toLowerCase()) || 
                             s.name.toLowerCase().includes(search.toLowerCase());
-      const matchesSignal = signalFilters.length === 0 || signalFilters.includes(s.zone);
+      const matchesD = dSignalFilter.length === 0 || dSignalFilter.includes(stocksByTimeframe['1d'][s.symbol]?.zone || 'Neutral');
+      const matchesW = wSignalFilter.length === 0 || wSignalFilter.includes(stocksByTimeframe['1wk'][s.symbol]?.zone || 'Neutral');
+      const matchesM = mSignalFilter.length === 0 || mSignalFilter.includes(stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral');
+      
       const matchesSector = sectorFilters.length === 0 || sectorFilters.includes(s.sector);
-      return matchesSearch && matchesSignal && matchesSector;
+      return matchesSearch && matchesD && matchesW && matchesM && matchesSector;
     });
 
     return [...list].sort((a, b) => {
@@ -408,7 +440,7 @@ export default function App() {
       }
       return 0;
     });
-  }, [rankedStocks, search, sortBy, sortOrder, signalFilters, sectorFilters]);
+  }, [rankedStocks, search, sortBy, sortOrder, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe]);
 
   const formatMarketCap = (val: number) => {
     if (val >= 1e12) return `$${(val / 1e12).toFixed(2)}T`;
@@ -518,26 +550,6 @@ export default function App() {
             <Search className="w-5 h-5" />
           </button>
 
-          <div className={`flex p-0.5 rounded-lg border shrink-0 ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-100 border-slate-200'}`}>
-            {[
-              { id: '1d', label: '1D' },
-              { id: '1wk', label: '1W' },
-              { id: '1mo', label: '1M' }
-            ].map((tf) => (
-              <button
-                key={tf.id}
-                onClick={() => setTimeframe(tf.id as any)}
-                className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${
-                  timeframe === tf.id 
-                    ? 'bg-indigo-500 text-white shadow-lg' 
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                {tf.label}
-              </button>
-            ))}
-          </div>
-
           <button 
             onClick={fetchStocks}
             className={`p-2 rounded-full transition-all active:scale-95 disabled:opacity-50 interactive-target ${isDarkMode ? 'hover:bg-white/10 text-slate-400 hover:text-white' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-900'}`}
@@ -615,29 +627,29 @@ export default function App() {
           {/* Breakdown Notification Bar */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 md:gap-2 w-full md:w-auto">
             <button 
-              onClick={() => toggleSignalFilter('Standard Buy')}
-              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${signalFilters.includes('Standard Buy') ? (isDarkMode ? 'bg-emerald-500/30 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-emerald-100 border-emerald-400') : (isDarkMode ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-emerald-50 text-emerald-600 border-emerald-100')}`}
+              onClick={() => toggleSignalFilter('1d', 'Standard Buy')}
+              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Standard Buy') ? (isDarkMode ? 'bg-emerald-500/30 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-emerald-100 border-emerald-400') : (isDarkMode ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-emerald-50 text-emerald-600 border-emerald-100')}`}
             >
               <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>{stats.buyCount}</span>
               <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-emerald-400/60' : 'text-emerald-600/60'}`}>Standard Buys</span>
             </button>
             <button 
-              onClick={() => toggleSignalFilter('Value Pullback')}
-              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${signalFilters.includes('Value Pullback') ? (isDarkMode ? 'bg-amber-500/30 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-amber-100 border-amber-400') : (isDarkMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 text-amber-600 border-amber-100')}`}
+              onClick={() => toggleSignalFilter('1d', 'Value Pullback')}
+              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Value Pullback') ? (isDarkMode ? 'bg-amber-500/30 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-amber-100 border-amber-400') : (isDarkMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 text-amber-600 border-amber-100')}`}
             >
               <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>{stats.valueCount}</span>
               <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-amber-400/60' : 'text-amber-600/60'}`}>Pullbacks</span>
             </button>
             <button 
-              onClick={() => toggleSignalFilter('Sell Section')}
-              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${signalFilters.includes('Sell Section') ? (isDarkMode ? 'bg-rose-500/30 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : 'bg-rose-100 border-rose-400') : (isDarkMode ? 'bg-rose-500/10 border-rose-500/20' : 'bg-rose-50 text-rose-600 border-rose-100')}`}
+              onClick={() => toggleSignalFilter('1d', 'Sell Section')}
+              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Sell Section') ? (isDarkMode ? 'bg-rose-500/30 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : 'bg-rose-100 border-rose-400') : (isDarkMode ? 'bg-rose-500/10 border-rose-500/20' : 'bg-rose-50 text-rose-600 border-rose-100')}`}
             >
               <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-rose-400' : 'text-rose-600'}`}>{stats.sellCount}</span>
               <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-rose-400/60' : 'text-rose-600/60'}`}>Sell Zones</span>
             </button>
             <button 
-              onClick={() => toggleSignalFilter('Neutral')}
-              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${signalFilters.includes('Neutral') ? (isDarkMode ? 'bg-white/20 border-white/40' : 'bg-slate-200 border-slate-400') : (isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-100 border-slate-200')}`}
+              onClick={() => toggleSignalFilter('1d', 'Neutral')}
+              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Neutral') ? (isDarkMode ? 'bg-white/20 border-white/40' : 'bg-slate-200 border-slate-400') : (isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-100 border-slate-200')}`}
             >
               <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{stats.neutralCount}</span>
               <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Neutral</span>
@@ -732,34 +744,50 @@ export default function App() {
                     >
                       Cap
                     </th>
-                    <th className={`px-1 md:px-4 py-3 text-center group relative whitespace-nowrap w-[20%] transition-all ${showFilterDropdown ? 'z-50' : 'z-20'}`}>
-                      <div className="flex items-center justify-center gap-1">
-                        <div className="relative inline-block text-left" ref={signalRef}>
+                    {/* Header for D, W, M signals with filters */}
+                    {['1d', '1wk', '1mo'].map((tf) => (
+                      <th key={tf} className={`px-1 md:px-4 py-3 text-center group relative whitespace-nowrap w-[10%]`}>
+                        <div 
+                          className="relative inline-block text-left" 
+                          ref={tf === '1d' ? dSignalRef : tf === '1wk' ? wSignalRef : mSignalRef}
+                        >
                           <button 
-                            onClick={(e) => { e.stopPropagation(); setShowFilterDropdown(!showFilterDropdown); }}
-                            className={`bg-transparent text-[9px] md:text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1 interactive-target ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              setActiveSignalDropdown(prev => prev === tf ? null : tf as any);
+                            }}
+                            className={`flex items-center justify-center gap-0.5 text-[8px] md:text-[10px] uppercase font-bold tracking-wider hover:text-indigo-400 transition-colors ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
                           >
-                            <Filter className="w-2.5 h-2.5" />
-                            Signal
+                            {tf === '1d' ? 'D' : tf === '1wk' ? 'W' : 'M'}
+                            <Filter className={`w-2 h-2 ${ (tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).length > 0 ? 'text-indigo-400' : ''}`} />
                           </button>
-
-                          {showFilterDropdown && (
-                            <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-3 w-48 border rounded-xl shadow-2xl p-2 z-[100] backdrop-blur-xl transition-all ${isDarkMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}>
+                          {activeSignalDropdown === tf && (
+                            <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-3 w-40 border rounded-xl shadow-2xl p-2 z-[100] backdrop-blur-xl ${isDarkMode ? 'bg-slate-950 border-white/10' : 'bg-white border-slate-200'}`}>
+                              <div className={`px-3 py-1.5 mb-1 text-[8px] font-black uppercase tracking-widest border-b border-white/5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                {tf === '1d' ? 'Daily' : tf === '1wk' ? 'Weekly' : 'Monthly'} Filter
+                              </div>
                               {['Standard Buy', 'Value Pullback', 'Sell Section', 'Neutral'].map((option) => (
                                 <button
-                                  key={option}
-                                  onClick={(e) => { e.stopPropagation(); toggleSignalFilter(option); }}
-                                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all group/opt interactive-target ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-white/5' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}`}
+                                  key={`${tf}-${option}`}
+                                  onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    toggleSignalFilter(tf as any, option); 
+                                  }}
+                                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-[9px] font-bold uppercase transition-all ${
+                                    (tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).includes(option)
+                                      ? (isDarkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-50 text-indigo-600')
+                                      : (isDarkMode ? 'text-slate-400 hover:bg-white/5' : 'text-slate-500 hover:bg-slate-100')
+                                  }`}
                                 >
-                                  <span className={signalFilters.includes(option) ? 'text-indigo-400' : ''}>{option}</span>
-                                  {signalFilters.includes(option) && <Check className="w-3 h-3 text-indigo-400" />}
+                                  <span>{option}</span>
+                                  {(tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).includes(option) && <Check className="w-3 h-3" />}
                                 </button>
                               ))}
                             </div>
                           )}
                         </div>
-                      </div>
-                    </th>
+                      </th>
+                    ))}
                     <th className="px-1 md:px-4 py-3 whitespace-nowrap w-[15%] text-center">Trend</th>
                     <th 
                       className={`px-1 md:px-4 py-3 cursor-pointer transition-colors whitespace-nowrap w-[15%] text-center ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
@@ -769,17 +797,17 @@ export default function App() {
                     </th>
                     <th 
                       className={`px-1 md:px-4 py-3 text-center cursor-pointer transition-colors whitespace-nowrap w-[10%] ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
-                      onClick={() => handleSort('change')}
+                      onClick={() => handleSort('marketCap')} /* Temporary placeholder */
                     >
-                      %
+                      Price
                     </th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y transition-all duration-300 ${isDarkMode ? 'divide-white/5' : 'divide-slate-200'}`}>
                   <AnimatePresence mode="popLayout">
-                    {filteredStocks.map((stock) => (
+                    {filteredStocks.map((stock, index) => (
                       <motion.tr 
-                        key={stock.symbol}
+                        key={`${stock.symbol}-${index}`}
                         layout
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -803,8 +831,15 @@ export default function App() {
                         <td className={`px-1 md:px-4 py-3 text-[10px] md:text-[11px] font-bold whitespace-nowrap text-center ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                           {formatMarketCap(stock.marketCap)}
                         </td>
-                        <td className="px-1 md:px-4 py-3 text-center">
-                          {getZoneBadge(stock.zone)}
+                        {/* Cell for D, W, M signals */}
+                        <td id={`d-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
+                          {getZoneBadge(stocksByTimeframe['1d'][stock.symbol]?.zone || 'Neutral')}
+                        </td>
+                        <td id={`w-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
+                          {getZoneBadge(stocksByTimeframe['1wk'][stock.symbol]?.zone || 'Neutral')}
+                        </td>
+                        <td id={`m-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
+                          {getZoneBadge(stocksByTimeframe['1mo'][stock.symbol]?.zone || 'Neutral')}
                         </td>
                         <td className="px-1 md:px-4 py-3 text-center">
                           <div className={`text-[10px] md:text-[11px] font-black uppercase tracking-tighter ${stock.maFast > stock.maSlow ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -824,8 +859,8 @@ export default function App() {
                           </div>
                         </td>
                         <td className="px-1 md:px-4 py-3 text-center">
-                          <div className={`text-[10px] md:text-xs font-bold ${stock.change >= 0 ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-600')}`}>
-                            {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(1)}%
+                          <div className={`text-[10px] md:text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                            ${stock.price.toFixed(2)}
                           </div>
                         </td>
                       </motion.tr>
@@ -857,9 +892,9 @@ export default function App() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 text-left">
             <AnimatePresence>
-              {filteredStocks.map((stock) => (
+              {filteredStocks.map((stock, index) => (
                 <motion.div 
-                  key={stock.symbol}
+                  key={`${stock.symbol}-${index}`}
                   layout
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
