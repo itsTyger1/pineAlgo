@@ -553,26 +553,28 @@ export default function App() {
           </button>
 
           {/* Total Assets Counter */}
-          <div className="flex items-center gap-1.5 md:gap-2 pl-2 md:pl-4 border-l font-mono shrink-0 overflow-hidden leading-none border-white/10 dark:border-white/10 border-slate-200">
-            <div className="flex flex-col items-end">
-              <div className="flex items-center gap-0.5 md:gap-1">
-                <span className="hidden xs:inline-block text-[8px] md:text-[10px] font-black uppercase text-slate-500 tracking-tight mr-0.5">Analysed:</span>
-                <span className="text-[11px] md:text-sm font-black text-indigo-400 tabular-nums">
-                  {displayedAnalyzedCount}
+          <div className="flex items-center pl-2 md:pl-4 border-l shrink-0 font-mono border-white/10 dark:border-white/10 border-slate-200">
+            <div className="flex flex-col items-end w-24 md:w-32">
+              <div className="flex items-center justify-between w-full mb-1">
+                <span className={`text-[9px] md:text-[10px] font-black uppercase tracking-tight ${displayedAnalyzedCount >= (symbols.length || 500) ? 'text-emerald-400' : 'text-indigo-400'}`}>
+                  {displayedAnalyzedCount >= (symbols.length || 500) && (symbols.length > 0) ? 'Ready' : 'Analyzing'}
                 </span>
-                <span className="text-[10px] md:text-sm font-black text-slate-500 tabular-nums opacity-60">
-                   /{symbols.length || '500'}
+                <span className="text-[10px] md:text-[11px] font-black text-slate-500 tabular-nums">
+                  {Math.round((displayedAnalyzedCount / (symbols.length || 1)) * 100)}%
                 </span>
               </div>
-              {symbols.length > 0 && (
-                <div className={`w-10 md:w-20 h-1 rounded-full mt-0.5 overflow-hidden border transition-all ${isDarkMode ? 'bg-white/5 border-white/5' : 'bg-slate-100 border-slate-100'}`}>
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${(displayedAnalyzedCount / (symbols.length || 1)) * 100}%` }}
-                    className="h-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]"
-                  />
-                </div>
-              )}
+              
+              <div className={`w-full h-1.5 md:h-2 rounded-full overflow-hidden border transition-all ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-200 border-slate-300'}`}>
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(displayedAnalyzedCount / (symbols.length || 1)) * 100}%` }}
+                  className={`h-full transition-all duration-300 ${displayedAnalyzedCount >= (symbols.length || 500) && (symbols.length > 0) ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]'}`}
+                />
+              </div>
+
+              <span className="mt-1 text-[8px] font-bold text-slate-500 uppercase tracking-widest text-right whitespace-nowrap opacity-70">
+                {displayedAnalyzedCount} / {symbols.length || '500'} Stocks
+              </span>
             </div>
           </div>
         </div>
