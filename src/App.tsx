@@ -329,7 +329,7 @@ export default function App() {
   };
 
   const [pullY, setPullY] = useState(0);
-  const touchStart = useRef(0);
+  const touchStart = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     let currentPullY = 0;
@@ -338,46 +338,69 @@ export default function App() {
     const onTouchStart = (e: TouchEvent) => {
       // Capture if we are at the top at the EXACT moment touch begins
       const scrollPos = window.scrollY || document.documentElement.scrollTop;
-      if (scrollPos <= 0) {
-        touchStart.current = e.touches[0].clientY;
+      // Stricter check for "top" to account for sub-pixel offsets
+      if (scrollPos <= 1) {
+        touchStart.current = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY
+        };
       } else {
         // Mark as invalid for pull-to-refresh if we start below the top
-        touchStart.current = -1;
+        touchStart.current = { x: -1, y: -1 };
       }
     };
 
     const onTouchMove = (e: TouchEvent) => {
       // If the touch didn't start at the top, never trigger pull-to-refresh for this gesture
-      if (touchStart.current === -1) return;
+      if (touchStart.current.y === -1) return;
+
+      const currentX = e.touches[0].clientX;
+      const currentY = e.touches[0].clientY;
+      const deltaY = currentY - touchStart.current.y;
+      const deltaX = currentX - touchStart.current.x;
+      
+      // If the first significant movement is UPWARDS (swipe up to scroll down)
+      // or HORIZONTAL (swiping sideways), invalidate immediately.
+      if (currentPullY === 0) {
+        if (deltaY < -5 || Math.abs(deltaX) > Math.abs(deltaY) + 10) {
+          touchStart.current = { x: -1, y: -1 };
+          return;
+        }
+      }
 
       const scrollPos = window.scrollY || document.documentElement.scrollTop;
       
-      if (scrollPos <= 0) {
-        const delta = e.touches[0].clientY - touchStart.current;
-        if (delta > 0) {
+      // We only care about pulling if we are locked to the top
+      if (scrollPos <= 2) {
+        if (deltaY > 0) {
           // If we are pulling down, update visual state
-          currentPullY = Math.min(delta * 0.4, 100);
+          currentPullY = Math.min(deltaY * 0.4, 100);
           setPullY(currentPullY);
           
-          // Only prevent default if we have actually pulled a bit to avoid
-          // breaking horizontal swipes or minimal accidental vertical movements
-          if (currentPullY > 10 && e.cancelable) {
+          // Prevent browser default pull-to-refresh or scrolling once we've committed to a pull
+          if (currentPullY > 5 && e.cancelable) {
             e.preventDefault();
           }
         } else {
+          // If they pull back up, reset
           currentPullY = 0;
           setPullY(0);
         }
+      } else {
+        // If they managed to scroll down while "pulling", cancel it
+        currentPullY = 0;
+        setPullY(0);
+        touchStart.current = { x: -1, y: -1 };
       }
     };
 
     const onTouchEnd = () => {
-      if (touchStart.current !== -1 && currentPullY >= scrollThreshold && !loading) {
+      if (touchStart.current.y !== -1 && currentPullY >= scrollThreshold && !loading) {
         fetchStocks();
       }
       currentPullY = 0;
       setPullY(0);
-      touchStart.current = -1;
+      touchStart.current = { x: -1, y: -1 };
     };
 
     // Use passive: false so we CAN prevent default browser pull-to-refresh if needed
