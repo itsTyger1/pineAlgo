@@ -327,9 +327,13 @@ async function getAnalysis(symbol: string, timeframe: string) {
 
   const endDate = new Date();
   let startDate: Date;
-  let interval: '1d' | '1wk' | '1mo' = '1d';
+  let interval: '60m' | '1d' | '1wk' | '1mo' = '1d';
 
   switch (timeframe) {
+    case '4hr':
+      interval = '60m';
+      startDate = subDays(endDate, 150);
+      break;
     case '1wk':
       interval = '1wk';
       startDate = subDays(endDate, 1500);
@@ -391,7 +395,20 @@ async function getAnalysis(symbol: string, timeframe: string) {
   }
 
   const history = chartResult.quotes || [];
-  const prices = history.map((h: any) => h.close).filter((c: any): c is number => typeof c === 'number');
+  let prices: number[] = [];
+  if (timeframe === '4hr') {
+    for (const q of history) {
+      if (q.date && typeof q.close === 'number') {
+        const d = new Date(q.date);
+        const timeStr = d.toLocaleString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+        if (timeStr === '12:30' || timeStr === '15:30') {
+          prices.push(q.close);
+        }
+      }
+    }
+  } else {
+    prices = history.map((h: any) => h.close).filter((c: any): c is number => typeof c === 'number');
+  }
 
   let sector = 'Other';
   const summary = summaryCache[symbol]?.data;

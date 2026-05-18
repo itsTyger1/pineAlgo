@@ -41,8 +41,9 @@ interface StockAnalysis {
 
 export default function App() {
   const [symbols, setSymbols] = useState<{symbol: string, marketCap: number}[]>([]);
-  const [timeframe, setTimeframe] = useState<'1d' | '1wk' | '1mo'>('1d');
+  const [timeframe, setTimeframe] = useState<'4hr' | '1d' | '1wk' | '1mo'>('1d');
   const [stocksByTimeframe, setStocksByTimeframe] = useState<Record<string, Record<string, StockAnalysis>>>({
+    '4hr': {},
     '1d': {},
     '1wk': {},
     '1mo': {}
@@ -65,7 +66,7 @@ export default function App() {
   const fetchingTimeframes = useRef<Set<string>>(new Set());
   
   const [displayedCountsByTimeframe, setDisplayedCountsByTimeframe] = useState<Record<string, number>>({
-    '1d': 0, '1wk': 0, '1mo': 0
+    '4hr': 0, '1d': 0, '1wk': 0, '1mo': 0
   });
 
   // Master source of truth for current timeframe's data
@@ -106,10 +107,11 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'marketCap' | 'change' | 'zone'>('marketCap');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [hrSignalFilter, setHrSignalFilter] = useState<string[]>([]);
   const [dSignalFilter, setDSignalFilter] = useState<string[]>([]);
   const [wSignalFilter, setWSignalFilter] = useState<string[]>([]);
   const [mSignalFilter, setMSignalFilter] = useState<string[]>([]);
-  const [activeSignalDropdown, setActiveSignalDropdown] = useState<'1d' | '1wk' | '1mo' | null>(null);
+  const [activeSignalDropdown, setActiveSignalDropdown] = useState<'4hr' | '1d' | '1wk' | '1mo' | null>(null);
   const [sectorFilters, setSectorFilters] = useState<string[]>([]);
   const [showSectorDropdown, setShowSectorDropdown] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -125,6 +127,7 @@ export default function App() {
     }
     return true;
   });
+  const hrSignalRef = useRef<HTMLDivElement>(null);
   const dSignalRef = useRef<HTMLDivElement>(null);
   const wSignalRef = useRef<HTMLDivElement>(null);
   const mSignalRef = useRef<HTMLDivElement>(null);
@@ -147,12 +150,13 @@ export default function App() {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       
+      const isOutsideHrSignal = !hrSignalRef.current || !hrSignalRef.current.contains(target);
       const isOutsideDSignal = !dSignalRef.current || !dSignalRef.current.contains(target);
       const isOutsideWSignal = !wSignalRef.current || !wSignalRef.current.contains(target);
       const isOutsideMSignal = !mSignalRef.current || !mSignalRef.current.contains(target);
       const isOutsideSector = !sectorRef.current || !sectorRef.current.contains(target);
 
-      if (isOutsideDSignal && isOutsideWSignal && isOutsideMSignal) {
+      if (isOutsideHrSignal && isOutsideDSignal && isOutsideWSignal && isOutsideMSignal) {
         setActiveSignalDropdown(null);
       }
       
@@ -164,8 +168,8 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const toggleSignalFilter = (tf: '1d' | '1wk' | '1mo', filter: string) => {
-    const setter = tf === '1d' ? setDSignalFilter : tf === '1wk' ? setWSignalFilter : setMSignalFilter;
+  const toggleSignalFilter = (tf: '4hr' | '1d' | '1wk' | '1mo', filter: string) => {
+    const setter = tf === '4hr' ? setHrSignalFilter : tf === '1d' ? setDSignalFilter : tf === '1wk' ? setWSignalFilter : setMSignalFilter;
     setter(prev => 
       prev.includes(filter) 
         ? prev.filter(f => f !== filter) 
@@ -220,18 +224,18 @@ export default function App() {
       setLoading(true);
       setError(null);
       fetchingTimeframes.current.clear();
-      setDisplayedCountsByTimeframe({ '1d': 0, '1wk': 0, '1mo': 0 });
+      setDisplayedCountsByTimeframe({ '4hr': 0, '1d': 0, '1wk': 0, '1mo': 0 });
       const data = await fetchWithRetry('/api/stocks');
       if (Array.isArray(data)) {
         const uniqueData = data.slice(0, 500); // Explicitly cap client side too
         setSymbols(uniqueData);
-        setStocksByTimeframe({ '1d': {}, '1wk': {}, '1mo': {} });
+        setStocksByTimeframe({ '4hr': {}, '1d': {}, '1wk': {}, '1mo': {} });
         
         // Start current timeframe first
         const activePromise = fetchAllAnalysis(uniqueData.map(s => s.symbol), activeTimeframeRef.current);
         
         // Then start others in background with staggered delays
-        const otherTFs = (['1d', '1wk', '1mo'] as const).filter(tf => tf !== activeTimeframeRef.current);
+        const otherTFs = (['4hr', '1d', '1wk', '1mo'] as const).filter(tf => tf !== activeTimeframeRef.current);
         (async () => {
           for (let i = 0; i < otherTFs.length; i++) {
             await new Promise(r => setTimeout(r, 1500 * (i + 1))); // Gap between switching timeframe focus
@@ -383,7 +387,7 @@ export default function App() {
   const rankedStocks = useMemo(() => {
     return symbols.map(s => {
       // Find the first available analysis for this symbol to provide metadata
-      const analysis = stocksByTimeframe['1d'][s.symbol] || stocksByTimeframe['1wk'][s.symbol] || stocksByTimeframe['1mo'][s.symbol] || {
+      const analysis = stocksByTimeframe['1d'][s.symbol] || stocksByTimeframe['4hr'][s.symbol] || stocksByTimeframe['1wk'][s.symbol] || stocksByTimeframe['1mo'][s.symbol] || {
         symbol: s.symbol,
         name: s.symbol,
         price: 0,
@@ -408,12 +412,13 @@ export default function App() {
     const list = rankedStocks.filter(s => {
       const matchesSearch = s.symbol.toLowerCase().includes(search.toLowerCase()) || 
                             s.name.toLowerCase().includes(search.toLowerCase());
+      const matchesHr = hrSignalFilter.length === 0 || hrSignalFilter.includes(stocksByTimeframe['4hr'][s.symbol]?.zone || 'Neutral Zone');
       const matchesD = dSignalFilter.length === 0 || dSignalFilter.includes(stocksByTimeframe['1d'][s.symbol]?.zone || 'Neutral Zone');
       const matchesW = wSignalFilter.length === 0 || wSignalFilter.includes(stocksByTimeframe['1wk'][s.symbol]?.zone || 'Neutral Zone');
       const matchesM = mSignalFilter.length === 0 || mSignalFilter.includes(stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral Zone');
       
       const matchesSector = sectorFilters.length === 0 || sectorFilters.includes(s.sector);
-      return matchesSearch && matchesD && matchesW && matchesM && matchesSector;
+      return matchesSearch && matchesHr && matchesD && matchesW && matchesM && matchesSector;
     });
 
     return [...list].sort((a, b) => {
@@ -433,7 +438,7 @@ export default function App() {
       }
       return 0;
     });
-  }, [rankedStocks, search, sortBy, sortOrder, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe]);
+  }, [rankedStocks, search, sortBy, sortOrder, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe]);
 
   const formatMarketCap = (val: number) => {
     if (val >= 1e12) return `$${(val / 1e12).toFixed(2)}T`;
@@ -739,12 +744,12 @@ export default function App() {
                     >
                       Cap
                     </th>
-                    {/* Header for D, W, M signals with filters */}
-                    {['1d', '1wk', '1mo'].map((tf) => (
+                    {/* Header for signals with filters */}
+                    {['4hr', '1d', '1wk', '1mo'].map((tf) => (
                       <th key={tf} className={`px-1 md:px-4 py-3 text-center group relative whitespace-nowrap w-[10%]`}>
                         <div 
                           className="relative inline-block text-left" 
-                          ref={tf === '1d' ? dSignalRef : tf === '1wk' ? wSignalRef : mSignalRef}
+                          ref={tf === '4hr' ? hrSignalRef : tf === '1d' ? dSignalRef : tf === '1wk' ? wSignalRef : mSignalRef}
                         >
                           <button 
                             onClick={(e) => { 
@@ -753,13 +758,13 @@ export default function App() {
                             }}
                             className={`flex items-center justify-center gap-0.5 text-[8px] md:text-[10px] uppercase font-bold tracking-wider hover:text-indigo-400 transition-colors ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
                           >
-                            {tf === '1d' ? 'D' : tf === '1wk' ? 'W' : 'M'}
-                            <Filter className={`w-2 h-2 ${ (tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).length > 0 ? 'text-indigo-400' : ''}`} />
+                            {tf === '4hr' ? '4H' : tf === '1d' ? 'D' : tf === '1wk' ? 'W' : 'M'}
+                            <Filter className={`w-2 h-2 ${ (tf === '4hr' ? hrSignalFilter : tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).length > 0 ? 'text-indigo-400' : ''}`} />
                           </button>
                           {activeSignalDropdown === tf && (
                             <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-3 w-40 border rounded-xl shadow-2xl p-2 z-[100] backdrop-blur-xl ${isDarkMode ? 'bg-slate-950 border-white/10' : 'bg-white border-slate-200'}`}>
                               <div className={`px-3 py-1.5 mb-1 text-[8px] font-black uppercase tracking-widest border-b border-white/5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                                {tf === '1d' ? 'Daily' : tf === '1wk' ? 'Weekly' : 'Monthly'} Filter
+                                {tf === '4hr' ? '4 Hour' : tf === '1d' ? 'Daily' : tf === '1wk' ? 'Weekly' : 'Monthly'} Filter
                               </div>
                               {['Buy Zone', 'Value Zone', 'Sell Zone', 'Neutral Zone'].map((option) => (
                                 <button
@@ -769,13 +774,13 @@ export default function App() {
                                     toggleSignalFilter(tf as any, option); 
                                   }}
                                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-[9px] font-bold uppercase transition-all ${
-                                    (tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).includes(option)
+                                    (tf === '4hr' ? hrSignalFilter : tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).includes(option)
                                       ? (isDarkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-50 text-indigo-600')
                                       : (isDarkMode ? 'text-slate-400 hover:bg-white/5' : 'text-slate-500 hover:bg-slate-100')
                                   }`}
                                 >
                                   <span>{option}</span>
-                                  {(tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).includes(option) && <Check className="w-3 h-3" />}
+                                  {(tf === '4hr' ? hrSignalFilter : tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).includes(option) && <Check className="w-3 h-3" />}
                                 </button>
                               ))}
                             </div>
@@ -818,7 +823,10 @@ export default function App() {
                         <td className={`px-1 md:px-4 py-3 text-[10px] md:text-[11px] font-bold whitespace-nowrap text-center ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                           {formatMarketCap(stock.marketCap)}
                         </td>
-                        {/* Cell for D, W, M signals */}
+                        {/* Cell for signals */}
+                        <td id={`hr-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
+                          {getZoneBadge(stocksByTimeframe['4hr'][stock.symbol]?.zone || 'Neutral Zone')}
+                        </td>
                         <td id={`d-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
                           {getZoneBadge(stocksByTimeframe['1d'][stock.symbol]?.zone || 'Neutral Zone')}
                         </td>
