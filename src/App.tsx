@@ -238,14 +238,18 @@ export default function App() {
         setStocksByTimeframe({ '1d': {}, '1wk': {}, '1mo': {} });
         
         // Start current timeframe first
-        await fetchAllAnalysis(uniqueData.map(s => s.symbol), activeTimeframeRef.current);
+        const activePromise = fetchAllAnalysis(uniqueData.map(s => s.symbol), activeTimeframeRef.current);
         
         // Then start others in background with staggered delays
         const otherTFs = (['1d', '1wk', '1mo'] as const).filter(tf => tf !== activeTimeframeRef.current);
-        for (let i = 0; i < otherTFs.length; i++) {
-          await new Promise(r => setTimeout(r, 1500)); // Gap between switching timeframe focus
-          fetchAllAnalysis(uniqueData.map(s => s.symbol), otherTFs[i]);
-        }
+        (async () => {
+          for (let i = 0; i < otherTFs.length; i++) {
+            await new Promise(r => setTimeout(r, 1500 * (i + 1))); // Gap between switching timeframe focus
+            fetchAllAnalysis(uniqueData.map(s => s.symbol), otherTFs[i]);
+          }
+        })();
+
+        await activePromise;
       } else {
         setError('Failed to fetch stock list');
       }
