@@ -41,9 +41,18 @@ interface StockAnalysis {
 
 export default function App() {
   const [symbols, setSymbols] = useState<{symbol: string, marketCap: number}[]>([]);
-  const [stocks, setStocks] = useState<Record<string, StockAnalysis>>({});
+  const [timeframe, setTimeframe] = useState<'1d' | '1wk' | '1mo'>('1d');
+  const [stocksByTimeframe, setStocksByTimeframe] = useState<Record<string, Record<string, StockAnalysis>>>({
+    '1d': {},
+    '1wk': {},
+    '1mo': {}
+  });
+  const stocks = useMemo(() => stocksByTimeframe[timeframe] || {}, [stocksByTimeframe, timeframe]);
   const [loading, setLoading] = useState(true);
-  const [analyzedCount, setAnalyzedCount] = useState(0);
+  const [countsByTimeframe, setCountsByTimeframe] = useState<Record<string, number>>({
+    '1d': 0, '1wk': 0, '1mo': 0
+  });
+  const analyzedCount = countsByTimeframe[timeframe] || 0;
   const [displayedAnalyzedCount, setDisplayedAnalyzedCount] = useState(0);
 
   // Smooth incremental counter effect for the "Analyzed" display
@@ -64,7 +73,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'marketCap' | 'change' | 'rsi' | 'zone'>('marketCap');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [timeframe, setTimeframe] = useState<'1d' | '1wk' | '1mo'>('1d');
   const [signalFilters, setSignalFilters] = useState<string[]>([]);
   const [sectorFilters, setSectorFilters] = useState<string[]>([]);
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
@@ -128,11 +136,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (symbols.length > 0) {
-      setStocks({});
+    if (symbols.length > 0 && Object.keys(stocksByTimeframe[timeframe]).length === 0) {
       fetchAllAnalysis(symbols.map(s => s.symbol), timeframe);
     }
-  }, [timeframe]);
+  }, [timeframe, symbols]);
 
   // Robust fetch with retry
   const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 2) => {
@@ -159,12 +166,22 @@ export default function App() {
     try {
       setLoading(true);
       setError(null);
-      setAnalyzedCount(0);
+      setCountsByTimeframe({ '1d': 0, '1wk': 0, '1mo': 0 });
       const data = await fetchWithRetry('/api/stocks');
       if (Array.isArray(data)) {
         setSymbols(data);
-        setStocks({});
-        await fetchAllAnalysis(data.map(s => s.symbol), timeframe);
+        setStocksByTimeframe({ '1d': {}, '1wk': {}, '1mo': {} });
+        
+        // Priority 1: Current timeframe
+        const mainAnalysisPromise = fetchAllAnalysis(data.map(s => s.symbol), timeframe);
+        
+        // Priority 2: Other timeframes in background
+        const otherTimeframes = (['1d', '1wk', '1mo'] as const).filter(tf => tf !== timeframe);
+        otherTimeframes.forEach(tf => {
+          fetchAllAnalysis(data.map(s => s.symbol), tf);
+        });
+
+        await mainAnalysisPromise;
       } else {
         setError('Failed to fetch stock list');
       }
@@ -178,9 +195,9 @@ export default function App() {
   };
 
   const fetchAllAnalysis = async (list: string[], currentTF: string) => {
-    setLoading(true);
-    setAnalyzedCount(0);
-    // Dynamic batch size based on platform
+    if (currentTF === timeframe) setLoading(true);
+    
+    // Dynamic batch size
     const batchSize = window.location.hostname.includes('localhost') ? 25 : 12;
     const chunks = [];
     for (let i = 0; i < list.length; i += batchSize) {
@@ -188,7 +205,6 @@ export default function App() {
     }
 
     let failCount = 0;
-    // Process batches with limited concurrency on the client
     const maxConcurrentBatches = 4;
     const activeRequests = new Set();
     const remainingChunks = [...chunks];
@@ -196,10 +212,7 @@ export default function App() {
     return new Promise<void>((resolve) => {
       const processNext = async () => {
         if (remainingChunks.length === 0 && activeRequests.size === 0) {
-          if (failCount > list.length / 2) {
-            setError(`Notice: High latency detected. try refreshing.`);
-          }
-          setLoading(false);
+          if (currentTF === timeframe) setLoading(false);
           resolve();
           return;
         }
@@ -213,7 +226,6 @@ export default function App() {
 
             while (!success && retryCount <= maxRetries) {
               try {
-                // Low-latency staggered delay
                 await new Promise(r => setTimeout(r, Math.random() * 50));
                 
                 const controller = new AbortController();
@@ -238,16 +250,19 @@ export default function App() {
                 
                 const results = await response.json();
                 if (Array.isArray(results)) {
-                  setStocks(prev => {
-                    const next = { ...prev };
+                  setStocksByTimeframe(prev => {
+                    const timeframeData = { ...prev[currentTF] };
                     results.forEach(res => {
                       if (res && res.symbol) {
-                        next[res.symbol] = res;
+                        timeframeData[res.symbol] = res;
                       }
                     });
-                    return next;
+                    return { ...prev, [currentTF]: timeframeData };
                   });
-                  setAnalyzedCount(prev => prev + results.length);
+                  setCountsByTimeframe(prev => ({
+                    ...prev,
+                    [currentTF]: prev[currentTF] + results.length
+                  }));
                   success = true;
                 }
               } catch (e: any) {
