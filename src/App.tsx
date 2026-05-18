@@ -44,6 +44,21 @@ export default function App() {
   const [stocks, setStocks] = useState<Record<string, StockAnalysis>>({});
   const [loading, setLoading] = useState(true);
   const [analyzedCount, setAnalyzedCount] = useState(0);
+  const [displayedAnalyzedCount, setDisplayedAnalyzedCount] = useState(0);
+
+  // Smooth incremental counter effect for the "Analyzed" display
+  useEffect(() => {
+    if (displayedAnalyzedCount < analyzedCount) {
+      const timer = setTimeout(() => {
+        // Increment by 1 for individual digit feel
+        setDisplayedAnalyzedCount(prev => prev + 1);
+      }, 40); // 40ms provides a natural browsing/loading rhythm
+      return () => clearTimeout(timer);
+    } else if (displayedAnalyzedCount > analyzedCount) {
+      // Reset immediately if the base count is reset (e.g. refresh)
+      setDisplayedAnalyzedCount(analyzedCount);
+    }
+  }, [analyzedCount, displayedAnalyzedCount]);
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'grid' | 'table'>('table');
   const [error, setError] = useState<string | null>(null);
@@ -529,16 +544,9 @@ export default function App() {
             <span className="text-[8px] md:text-[10px] font-black uppercase text-slate-500 tracking-wider">Analyzed:</span>
             <div className="flex flex-col items-end">
               <div className="flex items-center gap-1">
-                <AnimatePresence mode="wait">
-                  <motion.span 
-                    key={analyzedCount}
-                    initial={{ y: 5, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    className="text-xs md:text-sm font-black text-indigo-400 tabular-nums shrink-0"
-                  >
-                    {analyzedCount}
-                  </motion.span>
-                </AnimatePresence>
+                <span className="text-xs md:text-sm font-black text-indigo-400 tabular-nums shrink-0">
+                  {displayedAnalyzedCount}
+                </span>
                 <span className="text-xs md:text-sm font-black text-slate-500 tabular-nums shrink-0">
                    / {symbols.length || '500'}
                 </span>
@@ -547,7 +555,7 @@ export default function App() {
                 <div className={`w-12 md:w-20 h-1 rounded-full mt-0.5 overflow-hidden border transition-all ${isDarkMode ? 'bg-white/5 border-white/5' : 'bg-slate-100 border-slate-100'}`}>
                   <motion.div 
                     initial={{ width: 0 }}
-                    animate={{ width: `${(analyzedCount / symbols.length) * 100}%` }}
+                    animate={{ width: `${(displayedAnalyzedCount / symbols.length) * 100}%` }}
                     className="h-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]"
                   />
                 </div>
