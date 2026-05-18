@@ -53,8 +53,8 @@ function calculateRSI(data: number[], length: number): number | null {
 class RequestQueue {
   private queue: { fn: () => Promise<any>, resolve: (v: any) => void, reject: (e: any) => void, timeout: number }[] = [];
   private activeCount = 0;
-  private maxConcurrency = 30; // Significantly increased for faster parallel processing
-  private delayMs = 15; // Faster turnaround between requests
+  private maxConcurrency = 12; // Moderate concurrency for stability
+  private delayMs = 40; // Conservative delay
 
   async add<T>(fn: () => Promise<T>, timeoutMs = 25000): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -190,7 +190,7 @@ app.get("/api/stocks", async (req, res) => {
       });
 
       try {
-        const coreQuotes = await yfQueue.add(() => yahooFinance.quote(CORE_SYMBOLS, undefined, { validateResult: false }).catch(() => []));
+        const coreQuotes = await fetchQuoteWithRetry(CORE_SYMBOLS);
         if (Array.isArray(coreQuotes)) allQuotes.push(...coreQuotes);
       } catch (e) {
         console.warn("Core quotes fetch failed");
@@ -236,6 +236,31 @@ app.get("/api/stocks", async (req, res) => {
   }
 });
 
+// Helper for quote fetching with retry
+async function fetchQuoteWithRetry(symbols: string | string[]) {
+  let retryCount = 0;
+  const maxRetries = 2;
+  while (retryCount <= maxRetries) {
+    try {
+      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 5000);
+      if (q) return q;
+      throw new Error("Empty quote response");
+    } catch (e: any) {
+      retryCount++;
+      if (retryCount > maxRetries) {
+        if (typeof symbols === 'string') {
+          console.warn(`Quote fetch finally failed for ${symbols}`);
+        } else {
+          console.warn(`Batch quote fetch failed for ${symbols.length} symbols`);
+        }
+        return null;
+      }
+      await new Promise(r => setTimeout(r, 200 * retryCount));
+    }
+  }
+  return null;
+}
+
 async function getAnalysis(symbol: string, timeframe: string) {
   const cacheKey = `${symbol}_${timeframe}`;
   if (cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp) < CACHE_TTL) {
@@ -276,14 +301,10 @@ async function getAnalysis(symbol: string, timeframe: string) {
   }
 
   if (!quote) {
-    try {
-      const q = await yahooFinance.quote(symbol, undefined, { validateResult: false });
-      if (q) {
-        quote = q;
-        quoteCache[symbol] = { data: quote, timestamp: Date.now() };
-      }
-    } catch (e) {
-      console.warn(`Quote fetch failed for ${symbol}`);
+    const q = await fetchQuoteWithRetry(symbol);
+    if (q) {
+      quote = q;
+      quoteCache[symbol] = { data: quote, timestamp: Date.now() };
     }
   }
 
@@ -418,13 +439,13 @@ app.post("/api/analysis/batch", async (req, res) => {
       // 1. Fetch missing quotes in one go (batch optimized)
       const missingQuotes = symbols.filter(s => !quoteCache[s] || (Date.now() - quoteCache[s].timestamp) > META_CACHE_TTL);
       const quotePromise = missingQuotes.length > 0 
-        ? yfQueue.add(() => yahooFinance.quote(missingQuotes, undefined, { validateResult: false }).then((results: any[]) => {
+        ? fetchQuoteWithRetry(missingQuotes).then((results: any) => {
             if (Array.isArray(results)) {
               results.forEach((q: any) => {
                 if (q && q.symbol) quoteCache[q.symbol] = { data: q, timestamp: Date.now() };
               });
             }
-          }).catch(() => []), 5000)
+          })
         : Promise.resolve();
 
       // 2. Fetch missing summaries (parallel but limited) - use long cache
