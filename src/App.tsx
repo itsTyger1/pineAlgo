@@ -64,24 +64,42 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const fetchingTimeframes = useRef<Set<string>>(new Set());
   
-  // Use a stable reference for the counts to prevent visible jumping during timeframe switches
+  const [displayedCountsByTimeframe, setDisplayedCountsByTimeframe] = useState<Record<string, number>>({
+    '1d': 0, '1wk': 0, '1mo': 0
+  });
+
+  // Master source of truth for current timeframe's data
   const analyzedCount = useMemo(() => {
-    const symbolSet = new Set(symbols.map(s => s.symbol));
     const tfData = stocksByTimeframe[timeframe] || {};
-    // Strictly count items that exist in our master symbols list AND current timeframe results
     return symbols.filter(s => !!tfData[s.symbol]).length;
   }, [stocksByTimeframe, timeframe, symbols]);
 
-  // Track overall system progress for a more stable UI
-  const totalLoadedAcrossAll = useMemo(() => {
-    const allSymbols = symbols.map(s => s.symbol);
-    const loadedSets = Object.values(stocksByTimeframe).map(tfMap => 
-      allSymbols.filter(s => !!tfMap[s])
-    );
-    // Intersection? Or just current timeframe? 
-    // The user wants it "accurate for each time frame selected too".
-    return analyzedCount;
-  }, [stocksByTimeframe, timeframe, symbols, analyzedCount]);
+  const displayedAnalyzedCount = displayedCountsByTimeframe[timeframe] || 0;
+
+  // Smooth single-digit increment effect
+  useEffect(() => {
+    const visual = displayedCountsByTimeframe[timeframe] || 0;
+    
+    if (visual < analyzedCount) {
+      const diff = analyzedCount - visual;
+      // Speed up if the gap is large, but keep it feeling "per digit"
+      const increment = diff > 40 ? Math.floor(diff / 10) : 1;
+      
+      const timer = setTimeout(() => {
+        setDisplayedCountsByTimeframe(prev => ({
+          ...prev,
+          [timeframe]: prev[timeframe] + increment
+        }));
+      }, 25);
+      return () => clearTimeout(timer);
+    } else if (visual > analyzedCount && analyzedCount === 0) {
+      // Hard reset only when data is actually cleared
+      setDisplayedCountsByTimeframe(prev => ({
+        ...prev,
+        [timeframe]: 0
+      }));
+    }
+  }, [analyzedCount, timeframe, displayedCountsByTimeframe]);
 
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'grid' | 'table'>('table');
@@ -191,6 +209,7 @@ export default function App() {
       setLoading(true);
       setError(null);
       fetchingTimeframes.current.clear();
+      setDisplayedCountsByTimeframe({ '1d': 0, '1wk': 0, '1mo': 0 });
       const data = await fetchWithRetry('/api/stocks');
       if (Array.isArray(data)) {
         const uniqueData = data.slice(0, 500); // Explicitly cap client side too
@@ -586,7 +605,7 @@ export default function App() {
             <div className="flex flex-col items-end">
               <div className="flex items-center gap-1">
                 <span className="text-xs md:text-sm font-black text-indigo-400 tabular-nums shrink-0">
-                  {analyzedCount}
+                  {displayedAnalyzedCount}
                 </span>
                 <span className="text-xs md:text-sm font-black text-slate-500 tabular-nums shrink-0">
                    / {symbols.length || '500'}
@@ -596,7 +615,7 @@ export default function App() {
                 <div className={`w-12 md:w-20 h-1 rounded-full mt-0.5 overflow-hidden border transition-all ${isDarkMode ? 'bg-white/5 border-white/5' : 'bg-slate-100 border-slate-100'}`}>
                   <motion.div 
                     initial={{ width: 0 }}
-                    animate={{ width: `${(analyzedCount / symbols.length) * 100}%` }}
+                    animate={{ width: `${(displayedAnalyzedCount / (symbols.length || 1)) * 100}%` }}
                     className="h-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]"
                   />
                 </div>

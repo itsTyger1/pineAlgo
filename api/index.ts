@@ -84,14 +84,16 @@ class RequestQueue {
       } catch (error: any) {
         if (error?.message?.includes('Too Many Requests') || error?.status === 429) {
           console.error("RATE LIMIT DETECTED (429): Backing off...");
-          this.delayMs = Math.min(this.delayMs + 100, 1000); // Dynamic backoff
+          this.delayMs = Math.min(this.delayMs + 200, 1500); // More aggressive backoff
+          this.maxConcurrency = Math.max(1, this.maxConcurrency - 1); // Reduce concurrency
         }
         reject(error);
       } finally {
         await new Promise(r => setTimeout(r, this.delayMs));
         this.activeCount--;
-        // Recover delay slowly
+        // Recover stability slowly
         if (this.delayMs > 60) this.delayMs -= 5;
+        if (this.maxConcurrency < 12 && Math.random() > 0.8) this.maxConcurrency++;
         this.process();
       }
     };
@@ -250,8 +252,8 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
     return fetchSingleQuoteWithRetry(symbols);
   }
 
-  // Smaller chunks for higher reliability
-  const CHUNK_SIZE = 10;
+  // Even smaller chunks for maximum reliability
+  const CHUNK_SIZE = 5;
   const chunks = [];
   for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
     chunks.push(symbols.slice(i, i + CHUNK_SIZE));
@@ -259,14 +261,23 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
 
   const allResults: any[] = [];
   for (const chunk of chunks) {
-    const results = await fetchSingleQuoteWithRetry(chunk);
+    let results = await fetchSingleQuoteWithRetry(chunk);
+    
+    // Fallback: If a small batch fails, try individual requests for each symbol in that batch
+    if (!results && chunk.length > 1) {
+      console.warn(`Batch failed for ${chunk.join(',')}, falling back to individual requests`);
+      const individualPromises = chunk.map(sym => fetchSingleQuoteWithRetry(sym));
+      const individualResults = await Promise.all(individualPromises);
+      results = individualResults.filter(r => r !== null);
+    }
+
     if (Array.isArray(results)) {
       allResults.push(...results);
     } else if (results) {
       allResults.push(results);
     }
-    // Moderate delay between chunks
-    await new Promise(r => setTimeout(r, 60));
+    // Delay between chunks to avoid overwhelming the API
+    await new Promise(r => setTimeout(r, 100));
   }
   return allResults;
 }
