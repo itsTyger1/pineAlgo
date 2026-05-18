@@ -84,16 +84,17 @@ class RequestQueue {
       } catch (error: any) {
         if (error?.message?.includes('Too Many Requests') || error?.status === 429) {
           console.error("RATE LIMIT DETECTED (429): Backing off...");
-          this.delayMs = Math.min(this.delayMs + 200, 1500); // More aggressive backoff
-          this.maxConcurrency = Math.max(1, this.maxConcurrency - 1); // Reduce concurrency
+          this.delayMs = Math.min(this.delayMs + 300, 2000); // More aggressive backoff
+          this.maxConcurrency = Math.max(1, this.maxConcurrency - 2); // Reduce concurrency more significantly
         }
         reject(error);
       } finally {
-        await new Promise(r => setTimeout(r, this.delayMs));
+        const jitter = Math.random() * 50;
+        await new Promise(r => setTimeout(r, this.delayMs + jitter));
         this.activeCount--;
         // Recover stability slowly
-        if (this.delayMs > 60) this.delayMs -= 5;
-        if (this.maxConcurrency < 12 && Math.random() > 0.8) this.maxConcurrency++;
+        if (this.delayMs > 50) this.delayMs -= 1; // Slower recovery
+        if (this.maxConcurrency < 12 && Math.random() > 0.95) this.maxConcurrency++; // More rare concurrency increase
         this.process();
       }
     };
@@ -173,10 +174,9 @@ app.get("/api/stocks", async (req, res) => {
       const screeners = [
         "most_actives", 
         "undervalued_large_caps", 
-        "growth_technology_stocks", 
-        "day_gainers",
-        "day_losers",
+        "growth_technology_stocks",
         "undervalued_growth_stocks",
+        "day_gainers",
         "most_shorted_stocks"
       ];
 
@@ -234,8 +234,8 @@ app.get("/api/stocks", async (req, res) => {
       return stockList;
     };
 
-    // Vercel serverless has 10s limit, we time out after 9.0 seconds to allow for overhead
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 9000));
+    // Vercel serverless has 10s limit, we time out after 8.5 seconds to allow for fallback return
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8500));
     const stockList = await Promise.race([fetchStocksTask(), timeoutPromise]);
     
     return res.json(stockList);
@@ -252,8 +252,8 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
     return fetchSingleQuoteWithRetry(symbols);
   }
 
-  // Even smaller chunks for maximum reliability
-  const CHUNK_SIZE = 5;
+  // Chunk for reliability but not too small to avoid overhead
+  const CHUNK_SIZE = 15;
   const chunks = [];
   for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
     chunks.push(symbols.slice(i, i + CHUNK_SIZE));
@@ -265,7 +265,7 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
     
     // Fallback: If a small batch fails, try individual requests for each symbol in that batch
     if (!results && chunk.length > 1) {
-      console.warn(`Batch failed for ${chunk.join(',')}, falling back to individual requests`);
+      console.warn(`Batch failed for subset of ${chunk.length} symbols, falling back to individual requests`);
       const individualPromises = chunk.map(sym => fetchSingleQuoteWithRetry(sym));
       const individualResults = await Promise.all(individualPromises);
       results = individualResults.filter(r => r !== null);
@@ -277,18 +277,18 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
       allResults.push(results);
     }
     // Delay between chunks to avoid overwhelming the API
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 200));
   }
   return allResults;
 }
 
 async function fetchSingleQuoteWithRetry(symbols: string | string[]) {
   let retryCount = 0;
-  const maxRetries = 3; // Increased retries
+  const maxRetries = 5; // Increased retries for higher reliability
   while (retryCount <= maxRetries) {
     try {
       // Increased timeout to allow for network variability
-      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 9000);
+      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 12000);
       if (q) return q;
       throw new Error("Empty quote response");
     } catch (e: any) {
@@ -301,8 +301,10 @@ async function fetchSingleQuoteWithRetry(symbols: string | string[]) {
         }
         return null;
       }
-      // Increased backoff for more stability
-      await new Promise(r => setTimeout(r, 500 * retryCount));
+      // Exponential backoff with jitter - slightly more aggressive initial pause
+      const backoff = Math.pow(2, retryCount) * 600;
+      const jitter = Math.random() * 300;
+      await new Promise(r => setTimeout(r, backoff + jitter));
     }
   }
   return null;
@@ -357,11 +359,11 @@ async function getAnalysis(symbol: string, timeframe: string) {
 
   let chartResult;
   let chartRetryCount = 0;
-  const maxChartRetries = 1;
+  const maxChartRetries = 3;
   
   while (chartRetryCount <= maxChartRetries) {
     try {
-      chartResult = await yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }), 6000);
+      chartResult = await yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }), 7000);
       if (chartResult && chartResult.quotes && chartResult.quotes.length > 0) {
         break; // Success
       }
@@ -369,11 +371,12 @@ async function getAnalysis(symbol: string, timeframe: string) {
     } catch (e) {
       chartRetryCount++;
       if (chartRetryCount > maxChartRetries) {
-        console.error(`Chart failed for ${symbol} after ${maxChartRetries + 1} attempts`);
+        console.error(`Chart failed for ${symbol} after ${chartRetryCount} attempts`);
         chartResult = { quotes: [] };
       } else {
-        // Short delay before retry
-        await new Promise(r => setTimeout(r, 100));
+        // Exponential backoff for charts too
+        const chartBackoff = Math.pow(2, chartRetryCount) * 500;
+        await new Promise(r => setTimeout(r, chartBackoff + Math.random() * 200));
       }
     }
   }
@@ -518,9 +521,9 @@ app.post("/api/analysis/batch", async (req, res) => {
       return settledResults.map(r => r.status === 'fulfilled' ? r.value : null).filter(r => r !== null);
     };
 
-    const timeoutLimit = new Promise<any[]>((_, r) => setTimeout(() => r([]), 9000));
+    const timeoutLimit = new Promise<any[]>((_, r) => setTimeout(() => r([]), 8500));
     
-    // We race the batch task against a 7 second timeout so we never hit Vercel's 10s ceiling
+    // We race the batch task against a 8.5 second timeout so we never hit Vercel's 10s ceiling
     const results = await Promise.race([fetchBatchTask(), timeoutLimit]);
     res.json(results);
   } catch (error: any) {

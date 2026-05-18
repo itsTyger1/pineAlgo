@@ -113,9 +113,13 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('theme');
-      return saved ? saved === 'dark' : true;
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('theme');
+        return saved ? saved === 'dark' : true;
+      }
+    } catch (e) {
+      console.warn('LocalStorage not accessible:', e);
     }
     return true;
   });
@@ -128,7 +132,11 @@ export default function App() {
   }, [timeframe]);
 
   useEffect(() => {
-    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+    try {
+      localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+    } catch (e) {
+      console.warn('LocalStorage not accessible for saving:', e);
+    }
   }, [isDarkMode]);
 
   useEffect(() => {
@@ -219,10 +227,12 @@ export default function App() {
         // Start current timeframe first
         await fetchAllAnalysis(uniqueData.map(s => s.symbol), activeTimeframeRef.current);
         
-        // Then start others in background
-        (['1d', '1wk', '1mo'] as const).filter(tf => tf !== activeTimeframeRef.current).forEach(tf => {
-          fetchAllAnalysis(uniqueData.map(s => s.symbol), tf);
-        });
+        // Then start others in background with staggered delays
+        const otherTFs = (['1d', '1wk', '1mo'] as const).filter(tf => tf !== activeTimeframeRef.current);
+        for (let i = 0; i < otherTFs.length; i++) {
+          await new Promise(r => setTimeout(r, 1500)); // Gap between switching timeframe focus
+          fetchAllAnalysis(uniqueData.map(s => s.symbol), otherTFs[i]);
+        }
       } else {
         setError('Failed to fetch stock list');
       }
@@ -250,7 +260,7 @@ export default function App() {
       chunks.push(list.slice(i, i + batchSize));
     }
 
-    const maxConcurrentBatches = 6; // Slightly reduced for stability
+    const maxConcurrentBatches = 2; // Further reduced to avoid overwhelming the server queue
     const activeRequests = new Set();
     const remainingChunks = [...chunks];
 
@@ -268,15 +278,15 @@ export default function App() {
           const promise = (async () => {
             let success = false;
             let retryCount = 0;
-            const maxRetries = 2; // Increased client-side retries
+            const maxRetries = 2; // Reduced back to 2 to avoid long cycles blocking other timeframes
 
             while (!success && retryCount <= maxRetries) {
               try {
                 // Staggered starts
-                await new Promise(r => setTimeout(r, Math.random() * 100));
+                await new Promise(r => setTimeout(r, Math.random() * 300));
                 
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 20000); // Higher timeout
+                const timeoutId = setTimeout(() => controller.abort(), 30000); // Increased timeout
 
                 const response = await fetch('/api/analysis/batch', {
                   method: 'POST',
@@ -289,14 +299,14 @@ export default function App() {
 
                 if (!response.ok) {
                   if (response.status === 429) {
-                     await new Promise(r => setTimeout(r, 2000 * (retryCount + 1)));
+                     await new Promise(r => setTimeout(r, 2500 * (retryCount + 1)));
                      throw new Error('429');
                   }
                   throw new Error(`HTTP ${response.status}`);
                 }
                 
                 const results = await response.json();
-                if (Array.isArray(results)) {
+                if (Array.isArray(results) && results.length > 0) {
                   setStocksByTimeframe(prev => {
                     const timeframeData = { ...prev[currentTF] };
                     results.forEach(res => {
@@ -307,11 +317,15 @@ export default function App() {
                     return { ...prev, [currentTF]: timeframeData };
                   });
                   success = true;
+                } else if (Array.isArray(results) && results.length === 0) {
+                  // If we got an empty array (likely server-side timeout), consider it a retryable failure
+                  throw new Error('Server returned empty batch');
                 }
               } catch (e: any) {
                 retryCount++;
                 if (retryCount > maxRetries) break;
-                await new Promise(r => setTimeout(r, 500 * retryCount));
+                // Exponential backoff
+                await new Promise(r => setTimeout(r, 1000 * retryCount));
               }
             }
           })();
@@ -534,19 +548,19 @@ export default function App() {
           </button>
 
           {/* Total Assets Counter */}
-          <div className={`flex items-baseline gap-1 md:gap-1.5 pl-2 md:pl-4 border-l font-mono ${isDarkMode ? 'border-white/10' : 'border-slate-200'}`}>
-            <span className="text-[8px] md:text-[10px] font-black uppercase text-slate-500 tracking-wider">Analyzed:</span>
+          <div className="flex items-center gap-1.5 md:gap-2 pl-2 md:pl-4 border-l font-mono shrink-0 overflow-hidden leading-none border-white/10 dark:border-white/10 border-slate-200">
             <div className="flex flex-col items-end">
-              <div className="flex items-center gap-1">
-                <span className="text-xs md:text-sm font-black text-indigo-400 tabular-nums shrink-0">
+              <div className="flex items-center gap-0.5 md:gap-1">
+                <span className="hidden xs:inline-block text-[8px] md:text-[10px] font-black uppercase text-slate-500 tracking-tight mr-0.5">Analysed:</span>
+                <span className="text-[11px] md:text-sm font-black text-indigo-400 tabular-nums">
                   {displayedAnalyzedCount}
                 </span>
-                <span className="text-xs md:text-sm font-black text-slate-500 tabular-nums shrink-0">
-                   / {symbols.length || '500'}
+                <span className="text-[10px] md:text-sm font-black text-slate-500 tabular-nums opacity-60">
+                   /{symbols.length || '500'}
                 </span>
               </div>
-              {loading && symbols.length > 0 && (
-                <div className={`w-12 md:w-20 h-1 rounded-full mt-0.5 overflow-hidden border transition-all ${isDarkMode ? 'bg-white/5 border-white/5' : 'bg-slate-100 border-slate-100'}`}>
+              {symbols.length > 0 && (
+                <div className={`w-10 md:w-20 h-1 rounded-full mt-0.5 overflow-hidden border transition-all ${isDarkMode ? 'bg-white/5 border-white/5' : 'bg-slate-100 border-slate-100'}`}>
                   <motion.div 
                     initial={{ width: 0 }}
                     animate={{ width: `${(displayedAnalyzedCount / (symbols.length || 1)) * 100}%` }}
