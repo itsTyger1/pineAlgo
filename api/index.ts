@@ -288,11 +288,26 @@ async function getAnalysis(symbol: string, timeframe: string) {
   }
 
   let chartResult;
-  try {
-    chartResult = await yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }), 4000);
-  } catch (e) {
-    console.error(`Chart failed for ${symbol}`);
-    chartResult = { quotes: [] };
+  let chartRetryCount = 0;
+  const maxChartRetries = 1;
+  
+  while (chartRetryCount <= maxChartRetries) {
+    try {
+      chartResult = await yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }), 6000);
+      if (chartResult && chartResult.quotes && chartResult.quotes.length > 0) {
+        break; // Success
+      }
+      throw new Error("Empty chart data");
+    } catch (e) {
+      chartRetryCount++;
+      if (chartRetryCount > maxChartRetries) {
+        console.error(`Chart failed for ${symbol} after ${maxChartRetries + 1} attempts`);
+        chartResult = { quotes: [] };
+      } else {
+        // Short delay before retry
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
   }
 
   const history = chartResult.quotes || [];
