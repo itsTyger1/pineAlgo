@@ -6,9 +6,16 @@
 }
 
 @layer base {
+html, body {
+    @apply h-full bg-slate-950;
+    overflow-x: hidden;
+  }
+
   body {
-    @apply bg-slate-950 text-slate-100 antialiased overflow-x-hidden;
+    @apply text-slate-100 antialiased;
     -webkit-tap-highlight-color: transparent;
+    overflow-y: auto;
+    position: relative;
   }
 
   /* Custom scrollbar for a clean technical look */

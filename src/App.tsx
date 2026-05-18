@@ -438,7 +438,7 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 font-sans selection:bg-indigo-500/30 overflow-x-hidden relative overscroll-y-none ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+    <div className={`min-h-screen transition-colors duration-300 font-sans selection:bg-indigo-500/30 relative ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
       {/* Pull to Refresh Indicator */}
       <div 
         id="pull-refresh-indicator"
@@ -451,7 +451,7 @@ export default function App() {
         </div>
       </div>
       {/* Frosted Glass Background Accents */}
-      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+      <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none">
         <div className={`absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full blur-[120px] ${isDarkMode ? 'bg-blue-600/20' : 'bg-blue-600/10'}`}></div>
         <div className={`absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full blur-[120px] ${isDarkMode ? 'bg-emerald-600/10' : 'bg-emerald-600/5'}`}></div>
         <div className={`absolute top-[20%] right-[10%] w-[30%] h-[10%] rounded-full blur-[120px] ${isDarkMode ? 'bg-amber-600/10' : 'bg-amber-600/5'}`}></div>
