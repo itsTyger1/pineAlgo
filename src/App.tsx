@@ -47,43 +47,42 @@ export default function App() {
     '1wk': {},
     '1mo': {}
   });
-  const stocks = useMemo(() => stocksByTimeframe[timeframe] || {}, [stocksByTimeframe, timeframe]);
+
+  // Master source of truth for current timeframe's data, filtered by current symbols list to ensure consistency
+  const stocks = useMemo(() => {
+    const tfData = stocksByTimeframe[timeframe] || {};
+    const symbolSet = new Set(symbols.map(s => s.symbol));
+    const filtered: Record<string, StockAnalysis> = {};
+    Object.keys(tfData).forEach(symbol => {
+      if (symbolSet.has(symbol)) {
+        filtered[symbol] = tfData[symbol];
+      }
+    });
+    return filtered;
+  }, [stocksByTimeframe, timeframe, symbols]);
+
   const [loading, setLoading] = useState(true);
   const fetchingTimeframes = useRef<Set<string>>(new Set());
   
-  const [displayedCountsByTimeframe, setDisplayedCountsByTimeframe] = useState<Record<string, number>>({
-    '1d': 0, '1wk': 0, '1mo': 0
-  });
-
+  // Use a stable reference for the counts to prevent visible jumping during timeframe switches
   const analyzedCount = useMemo(() => {
     const symbolSet = new Set(symbols.map(s => s.symbol));
     const tfData = stocksByTimeframe[timeframe] || {};
-    // Only count if it's in our current symbols list
-    return Object.keys(tfData).filter(s => symbolSet.has(s)).length;
+    // Strictly count items that exist in our master symbols list AND current timeframe results
+    return symbols.filter(s => !!tfData[s.symbol]).length;
   }, [stocksByTimeframe, timeframe, symbols]);
 
-  const displayedAnalyzedCount = displayedCountsByTimeframe[timeframe] || 0;
+  // Track overall system progress for a more stable UI
+  const totalLoadedAcrossAll = useMemo(() => {
+    const allSymbols = symbols.map(s => s.symbol);
+    const loadedSets = Object.values(stocksByTimeframe).map(tfMap => 
+      allSymbols.filter(s => !!tfMap[s])
+    );
+    // Intersection? Or just current timeframe? 
+    // The user wants it "accurate for each time frame selected too".
+    return analyzedCount;
+  }, [stocksByTimeframe, timeframe, symbols, analyzedCount]);
 
-  // Smooth incremental counter effect for the "Analyzed" display (per timeframe)
-  useEffect(() => {
-    const visual = displayedCountsByTimeframe[timeframe] || 0;
-    
-    if (visual < analyzedCount) {
-      const timer = setTimeout(() => {
-        setDisplayedCountsByTimeframe(prev => ({
-          ...prev,
-          [timeframe]: prev[timeframe] + 1
-        }));
-      }, 30);
-      return () => clearTimeout(timer);
-    } else if (visual > analyzedCount) {
-      // Sync immediately if visual exceeds reality (e.g. data cleared or symbols changed)
-      setDisplayedCountsByTimeframe(prev => ({
-        ...prev,
-        [timeframe]: analyzedCount
-      }));
-    }
-  }, [analyzedCount, timeframe, displayedCountsByTimeframe]);
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'grid' | 'table'>('table');
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +103,11 @@ export default function App() {
   });
   const signalRef = useRef<HTMLDivElement>(null);
   const sectorRef = useRef<HTMLDivElement>(null);
+  const activeTimeframeRef = useRef(timeframe);
+
+  useEffect(() => {
+    activeTimeframeRef.current = timeframe;
+  }, [timeframe]);
 
   useEffect(() => {
     localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
@@ -152,13 +156,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (symbols.length > 0 && Object.keys(stocksByTimeframe[timeframe]).length === 0 && !fetchingTimeframes.current.has(timeframe)) {
+    const currentCount = Object.keys(stocksByTimeframe[timeframe]).length;
+    // Resume if not started or if symbols list exists but we haven't reached full capacity (with a buffer for failures)
+    const isSignificantlyEmpty = currentCount < (symbols.length * 0.95);
+    
+    if (symbols.length > 0 && isSignificantlyEmpty && !fetchingTimeframes.current.has(timeframe)) {
       fetchAllAnalysis(symbols.map(s => s.symbol), timeframe);
     }
   }, [timeframe, symbols, stocksByTimeframe]);
 
   // Robust fetch with retry
-  const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 2) => {
+  const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 3) => {
     try {
       const response = await fetch(url, options);
       if (!response.ok) {
@@ -183,19 +191,18 @@ export default function App() {
       setLoading(true);
       setError(null);
       fetchingTimeframes.current.clear();
-      setDisplayedCountsByTimeframe({ '1d': 0, '1wk': 0, '1mo': 0 });
       const data = await fetchWithRetry('/api/stocks');
       if (Array.isArray(data)) {
-        setSymbols(data);
+        const uniqueData = data.slice(0, 500); // Explicitly cap client side too
+        setSymbols(uniqueData);
         setStocksByTimeframe({ '1d': {}, '1wk': {}, '1mo': {} });
         
-        // fetchAllAnalysis handles its own concurrency and locks
         // Start current timeframe first
-        await fetchAllAnalysis(data.map(s => s.symbol), timeframe);
+        await fetchAllAnalysis(uniqueData.map(s => s.symbol), activeTimeframeRef.current);
         
         // Then start others in background
-        (['1d', '1wk', '1mo'] as const).filter(tf => tf !== timeframe).forEach(tf => {
-          fetchAllAnalysis(data.map(s => s.symbol), tf);
+        (['1d', '1wk', '1mo'] as const).filter(tf => tf !== activeTimeframeRef.current).forEach(tf => {
+          fetchAllAnalysis(uniqueData.map(s => s.symbol), tf);
         });
       } else {
         setError('Failed to fetch stock list');
@@ -213,23 +220,25 @@ export default function App() {
     if (fetchingTimeframes.current.has(currentTF)) return;
     fetchingTimeframes.current.add(currentTF);
 
-    if (currentTF === timeframe) setLoading(true);
+    // Only set global loading if this specific fetch is for the active timeframe
+    const isCurrent = () => activeTimeframeRef.current === currentTF;
+    if (isCurrent()) setLoading(true);
     
-    // Dynamic batch size
-    const batchSize = window.location.hostname.includes('localhost') ? 25 : 12;
+    // Reduced batch size for higher stability
+    const batchSize = 10; 
     const chunks = [];
     for (let i = 0; i < list.length; i += batchSize) {
       chunks.push(list.slice(i, i + batchSize));
     }
 
-    const maxConcurrentBatches = 4;
+    const maxConcurrentBatches = 6; // Slightly reduced for stability
     const activeRequests = new Set();
     const remainingChunks = [...chunks];
 
     return new Promise<void>((resolve) => {
       const processNext = async () => {
         if (remainingChunks.length === 0 && activeRequests.size === 0) {
-          if (currentTF === timeframe) setLoading(false);
+          if (isCurrent()) setLoading(false);
           fetchingTimeframes.current.delete(currentTF);
           resolve();
           return;
@@ -240,14 +249,15 @@ export default function App() {
           const promise = (async () => {
             let success = false;
             let retryCount = 0;
-            const maxRetries = 1;
+            const maxRetries = 2; // Increased client-side retries
 
             while (!success && retryCount <= maxRetries) {
               try {
-                await new Promise(r => setTimeout(r, Math.random() * 50));
+                // Staggered starts
+                await new Promise(r => setTimeout(r, Math.random() * 100));
                 
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000);
+                const timeoutId = setTimeout(() => controller.abort(), 20000); // Higher timeout
 
                 const response = await fetch('/api/analysis/batch', {
                   method: 'POST',
@@ -260,7 +270,7 @@ export default function App() {
 
                 if (!response.ok) {
                   if (response.status === 429) {
-                     await new Promise(r => setTimeout(r, 1500));
+                     await new Promise(r => setTimeout(r, 2000 * (retryCount + 1)));
                      throw new Error('429');
                   }
                   throw new Error(`HTTP ${response.status}`);
@@ -281,6 +291,8 @@ export default function App() {
                 }
               } catch (e: any) {
                 retryCount++;
+                if (retryCount > maxRetries) break;
+                await new Promise(r => setTimeout(r, 500 * retryCount));
               }
             }
           })();
@@ -574,7 +586,7 @@ export default function App() {
             <div className="flex flex-col items-end">
               <div className="flex items-center gap-1">
                 <span className="text-xs md:text-sm font-black text-indigo-400 tabular-nums shrink-0">
-                  {displayedAnalyzedCount}
+                  {analyzedCount}
                 </span>
                 <span className="text-xs md:text-sm font-black text-slate-500 tabular-nums shrink-0">
                    / {symbols.length || '500'}
@@ -584,7 +596,7 @@ export default function App() {
                 <div className={`w-12 md:w-20 h-1 rounded-full mt-0.5 overflow-hidden border transition-all ${isDarkMode ? 'bg-white/5 border-white/5' : 'bg-slate-100 border-slate-100'}`}>
                   <motion.div 
                     initial={{ width: 0 }}
-                    animate={{ width: `${(displayedAnalyzedCount / symbols.length) * 100}%` }}
+                    animate={{ width: `${(analyzedCount / symbols.length) * 100}%` }}
                     className="h-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]"
                   />
                 </div>

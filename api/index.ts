@@ -250,8 +250,8 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
     return fetchSingleQuoteWithRetry(symbols);
   }
 
-  // Chunk for arrays to avoid large request failures or rate limits
-  const CHUNK_SIZE = 15;
+  // Smaller chunks for higher reliability
+  const CHUNK_SIZE = 10;
   const chunks = [];
   for (let i = 0; i < symbols.length; i += CHUNK_SIZE) {
     chunks.push(symbols.slice(i, i + CHUNK_SIZE));
@@ -265,32 +265,33 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
     } else if (results) {
       allResults.push(results);
     }
-    // Small delay between chunks to be easy on the API
-    await new Promise(r => setTimeout(r, 50));
+    // Moderate delay between chunks
+    await new Promise(r => setTimeout(r, 60));
   }
   return allResults;
 }
 
 async function fetchSingleQuoteWithRetry(symbols: string | string[]) {
   let retryCount = 0;
-  const maxRetries = 2;
+  const maxRetries = 3; // Increased retries
   while (retryCount <= maxRetries) {
     try {
-      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 7000);
+      // Increased timeout to allow for network variability
+      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 9000);
       if (q) return q;
       throw new Error("Empty quote response");
     } catch (e: any) {
       retryCount++;
       if (retryCount > maxRetries) {
         if (typeof symbols === 'string') {
-          console.warn(`Quote fetch finally failed for ${symbols}`);
+          console.warn(`Quote fetch finally failed for ${symbols} after ${maxRetries} retries`);
         } else {
-          console.warn(`Batch quote fetch failed for subset of ${symbols.length} symbols`);
+          console.warn(`Batch quote fetch finally failed for subset of ${symbols.length} symbols`);
         }
         return null;
       }
-      // Exponential backoff
-      await new Promise(r => setTimeout(r, 300 * retryCount));
+      // Increased backoff for more stability
+      await new Promise(r => setTimeout(r, 500 * retryCount));
     }
   }
   return null;
