@@ -494,7 +494,7 @@ export default function App() {
           </span>
         );
       default: 
-        return <span className={`transition-all duration-300 ${baseClass} ${isDarkMode ? 'bg-white/5 text-slate-400 border border-white/10' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>Neutral Zone</span>;
+        return <span className={`transition-all duration-300 ${baseClass} ${isDarkMode ? 'bg-white/5 text-slate-400 border border-white/10' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>Neutral</span>;
     }
   };
 
