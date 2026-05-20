@@ -7,9 +7,7 @@ async function run() {
     if (!q.date) continue;
     const d = new Date(q.date);
     const timeStr = d.toLocaleString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
-    if (timeStr === '12:30' || timeStr === '15:30') {
-      console.log(q.date, timeStr, q.close);
-    }
+    console.log(q.date, timeStr, q.close);
   }
 }
 run();

@@ -160,7 +160,8 @@ app.get("/api/health", (req, res) => {
 });
 
 app.get("/api/stocks", async (req, res) => {
-  if (cachedStockList.length > 0 && Date.now() - lastStockListCacheTime < STOCK_LIST_TTL) {
+  const refresh = req.query.refresh === 'true';
+  if (!refresh && cachedStockList.length > 0 && Date.now() - lastStockListCacheTime < STOCK_LIST_TTL) {
     return res.json(cachedStockList);
   }
 
@@ -243,14 +244,18 @@ app.get("/api/stocks", async (req, res) => {
       return stockList;
     };
 
-    // Vercel serverless has 60s limit with our new config, we time out after 55 seconds
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 55000));
+    // Vercel serverless has 60s limit with our new config, we time out after 28 seconds to avoid 504 proxy timeout
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 28000));
     const stockList = await Promise.race([fetchStocksTask(), timeoutPromise]);
     
     return res.json(stockList);
 
-  } catch (error) {
-    console.error("Error fetching stocks:", error);
+  } catch (error: any) {
+    if (error.message === 'Timeout') {
+      console.warn("Stock fetch timeout (28s exceeded), using fallback data.");
+    } else {
+      console.error("Error fetching stocks:", error);
+    }
     return fallbackResponse();
   }
 });
@@ -268,8 +273,7 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
     chunks.push(symbols.slice(i, i + CHUNK_SIZE));
   }
 
-  const allResults: any[] = [];
-  for (const chunk of chunks) {
+  const promises = chunks.map(async (chunk) => {
     let results = await fetchSingleQuoteWithRetry(chunk);
     
     // Fallback: If a small batch fails, try individual requests for each symbol in that batch
@@ -279,49 +283,56 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
       const individualResults = await Promise.all(individualPromises);
       results = individualResults.filter(r => r !== null);
     }
+    return results;
+  });
 
-    if (Array.isArray(results)) {
-      allResults.push(...results);
-    } else if (results) {
-      allResults.push(results);
+  const settledResults = await Promise.allSettled(promises);
+  const allResults: any[] = [];
+  
+  for (const r of settledResults) {
+    if (r.status === 'fulfilled' && r.value) {
+      const results = r.value;
+      if (Array.isArray(results)) {
+        allResults.push(...results);
+      } else if (results) {
+        allResults.push(results);
+      }
     }
-    // Delay between chunks to avoid overwhelming the API
-    await new Promise(r => setTimeout(r, 200));
   }
   return allResults;
 }
 
 async function fetchSingleQuoteWithRetry(symbols: string | string[]) {
   let retryCount = 0;
-  const maxRetries = 7; // Increased retries for higher reliability
+  const maxRetries = 3; // Reduced retries for faster failure handling
   while (retryCount <= maxRetries) {
     try {
-      // Increased timeout to allow for network variability
-      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 20000); // Increased timeout
+      // Adjusted timeout to allow for network variability but fail fast enough
+      const q = await yfQueue.add(() => yahooFinance.quote(symbols as any, undefined, { validateResult: false }), 15000); // 15s timeout
       if (q) return q;
       throw new Error("Empty quote response");
     } catch (e: any) {
       retryCount++;
       if (retryCount > maxRetries) {
         if (typeof symbols === 'string') {
-          console.warn(`Quote fetch finally failed for ${symbols} after ${maxRetries} retries`);
+          // console.warn(`Quote fetch finally failed for ${symbols} after ${maxRetries} retries`);
         } else {
-          console.warn(`Batch quote fetch finally failed for subset of ${symbols.length} symbols`);
+          // console.warn(`Batch quote fetch finally failed for subset of ${symbols.length} symbols`);
         }
         return null;
       }
-      // Exponential backoff with jitter - slightly more aggressive initial pause
-      const backoff = Math.pow(2, retryCount) * 800; // Increased backoff
-      const jitter = Math.random() * 500;
+      // Exponential backoff
+      const backoff = Math.pow(2, retryCount) * 500; // Reduced backoff
+      const jitter = Math.random() * 300;
       await new Promise(r => setTimeout(r, backoff + jitter));
     }
   }
   return null;
 }
 
-async function getAnalysis(symbol: string, timeframe: string) {
+async function getAnalysis(symbol: string, timeframe: string, bypassCache = false) {
   const cacheKey = `${symbol}_${timeframe}`;
-  if (cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp) < CACHE_TTL) {
+  if (!bypassCache && cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp) < CACHE_TTL) {
     return cache[cacheKey].data;
   }
 
@@ -330,6 +341,10 @@ async function getAnalysis(symbol: string, timeframe: string) {
   let interval: '60m' | '1d' | '1wk' | '1mo' = '1d';
 
   switch (timeframe) {
+    case '1h':
+      interval = '60m';
+      startDate = subDays(endDate, 150);
+      break;
     case '4hr':
       interval = '60m';
       startDate = subDays(endDate, 150);
@@ -358,7 +373,7 @@ async function getAnalysis(symbol: string, timeframe: string) {
   };
 
   let quote: any = null;
-  if (quoteCache[symbol] && (Date.now() - quoteCache[symbol].timestamp) < META_CACHE_TTL) {
+  if (!bypassCache && quoteCache[symbol] && (Date.now() - quoteCache[symbol].timestamp) < META_CACHE_TTL) {
     quote = quoteCache[symbol].data;
   }
 
@@ -384,7 +399,7 @@ async function getAnalysis(symbol: string, timeframe: string) {
     } catch (e) {
       chartRetryCount++;
       if (chartRetryCount > maxChartRetries) {
-        console.error(`Chart failed for ${symbol} after ${chartRetryCount} attempts`);
+        // console.error(`Chart failed for ${symbol} after ${chartRetryCount} attempts`);
         chartResult = { quotes: [] };
       } else {
         // Exponential backoff for charts too
@@ -402,6 +417,21 @@ async function getAnalysis(symbol: string, timeframe: string) {
         const d = new Date(q.date);
         const timeStr = d.toLocaleString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
         if (timeStr === '12:30' || timeStr === '15:30') {
+          prices.push(q.close);
+        }
+      }
+    }
+  } else if (timeframe === '1h') {
+    for (const q of history) {
+      if (q.date && typeof q.close === 'number') {
+        const d = new Date(q.date);
+        const timeStr = d.toLocaleString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+        const [hourParts, minuteParts] = timeStr.split(':');
+        const h = parseInt(hourParts, 10);
+        const m = parseInt(minuteParts, 10);
+        const totalMinutes = h * 60 + m;
+        // Regular session standard trading hours: 9:30 AM to 4:00 PM EST (570 to 960 minutes)
+        if (totalMinutes >= 570 && totalMinutes < 960) {
           prices.push(q.close);
         }
       }
@@ -440,7 +470,7 @@ async function getAnalysis(symbol: string, timeframe: string) {
       symbol,
       name: quote?.longName || quote?.shortName || symbol,
       price: quote?.regularMarketPrice || 0,
-      change: (quote?.regularMarketChangePercent || 0) * (quote?.regularMarketChangePercent < 1 ? 100 : 1),
+      change: quote?.regularMarketChangePercent || 0,
       marketCap: quote?.marketCap || 0,
       maFast: quote?.fiftyDayAverage || 0,
       maSlow: quote?.twoHundredDayAverage || 0,
@@ -478,7 +508,7 @@ async function getAnalysis(symbol: string, timeframe: string) {
     symbol,
     name: quote?.longName || quote?.shortName || symbol,
     price: quote?.regularMarketPrice || 0,
-    change: (quote?.regularMarketChangePercent || 0) * (quote?.regularMarketChangePercent < 1 ? 100 : 1),
+    change: quote?.regularMarketChangePercent || 0,
     marketCap: quote?.marketCap || 0,
     maFast: maFast || 0,
     maSlow: maSlow || 0,
@@ -496,9 +526,10 @@ async function getAnalysis(symbol: string, timeframe: string) {
 app.get("/api/analysis/:symbol", async (req, res) => {
   const { symbol } = req.params;
   const timeframe = (req.query.timeframe as string) || '1d';
+  const refresh = req.query.refresh === 'true';
   
   try {
-    const data = await getAnalysis(symbol, timeframe);
+    const data = await getAnalysis(symbol, timeframe, refresh);
     res.json(data);
   } catch (error: any) {
     res.status(500).json({ error: error.message || `Failed to analyze ${symbol}` });
@@ -506,7 +537,7 @@ app.get("/api/analysis/:symbol", async (req, res) => {
 });
 
 app.post("/api/analysis/batch", async (req, res) => {
-  const { symbols, timeframe = '1d' } = req.body;
+  const { symbols, timeframe = '1d', refresh = false } = req.body;
   if (!Array.isArray(symbols)) {
     return res.status(400).json({ error: "symbols must be an array" });
   }
@@ -514,7 +545,9 @@ app.post("/api/analysis/batch", async (req, res) => {
   try {
     const fetchBatchTask = async () => {
       // 1. Fetch missing quotes in one go (batch optimized)
-      const missingQuotes = symbols.filter(s => !quoteCache[s] || (Date.now() - quoteCache[s].timestamp) > META_CACHE_TTL);
+      const missingQuotes = refresh
+        ? symbols
+        : symbols.filter(s => !quoteCache[s] || (Date.now() - quoteCache[s].timestamp) > META_CACHE_TTL);
       const quotePromise = missingQuotes.length > 0 
         ? fetchQuoteWithRetry(missingQuotes).then((results: any) => {
             if (Array.isArray(results)) {
@@ -538,7 +571,7 @@ app.post("/api/analysis/batch", async (req, res) => {
 
       const analysisPromises = symbols.map(async (sym) => {
         try {
-          return await getAnalysis(sym, timeframe);
+          return await getAnalysis(sym, timeframe, refresh);
         } catch (e: any) {
           return null;
         }
@@ -548,9 +581,9 @@ app.post("/api/analysis/batch", async (req, res) => {
       return settledResults.map(r => r.status === 'fulfilled' ? r.value : null).filter(r => r !== null);
     };
 
-    const timeoutLimit = new Promise<any[]>((_, r) => setTimeout(() => r([]), 50000));
+    const timeoutLimit = new Promise<any[]>((_, r) => setTimeout(() => r([]), 28000));
     
-    // We race the batch task against a 50 second timeout so we never hit Vercel's 60s ceiling
+    // We race the batch task against a 28 second timeout to avoid proxy 504 timeouts
     const results = await Promise.race([fetchBatchTask(), timeoutLimit]);
     res.json(results);
   } catch (error: any) {

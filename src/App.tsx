@@ -41,8 +41,9 @@ interface StockAnalysis {
 
 export default function App() {
   const [symbols, setSymbols] = useState<{symbol: string, marketCap: number}[]>([]);
-  const [timeframe, setTimeframe] = useState<'4hr' | '1d' | '1wk' | '1mo'>('1d');
+  const [timeframe, setTimeframe] = useState<'1h' | '4hr' | '1d' | '1wk' | '1mo'>('1d');
   const [stocksByTimeframe, setStocksByTimeframe] = useState<Record<string, Record<string, StockAnalysis>>>({
+    '1h': {},
     '4hr': {},
     '1d': {},
     '1wk': {},
@@ -66,7 +67,7 @@ export default function App() {
   const fetchingTimeframes = useRef<Set<string>>(new Set());
   
   const [displayedCountsByTimeframe, setDisplayedCountsByTimeframe] = useState<Record<string, number>>({
-    '4hr': 0, '1d': 0, '1wk': 0, '1mo': 0
+    '1h': 0, '4hr': 0, '1d': 0, '1wk': 0, '1mo': 0
   });
 
   // Master source of truth for current timeframe's data
@@ -107,11 +108,12 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'marketCap' | 'change' | 'zone'>('marketCap');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [hSignalFilter, setHSignalFilter] = useState<string[]>([]);
   const [hrSignalFilter, setHrSignalFilter] = useState<string[]>([]);
   const [dSignalFilter, setDSignalFilter] = useState<string[]>([]);
   const [wSignalFilter, setWSignalFilter] = useState<string[]>([]);
   const [mSignalFilter, setMSignalFilter] = useState<string[]>([]);
-  const [activeSignalDropdown, setActiveSignalDropdown] = useState<'4hr' | '1d' | '1wk' | '1mo' | null>(null);
+  const [activeSignalDropdown, setActiveSignalDropdown] = useState<'1h' | '4hr' | '1d' | '1wk' | '1mo' | null>(null);
   const [sectorFilters, setSectorFilters] = useState<string[]>([]);
   const [showSectorDropdown, setShowSectorDropdown] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -127,6 +129,7 @@ export default function App() {
     }
     return true;
   });
+  const hSignalRef = useRef<HTMLDivElement>(null);
   const hrSignalRef = useRef<HTMLDivElement>(null);
   const dSignalRef = useRef<HTMLDivElement>(null);
   const wSignalRef = useRef<HTMLDivElement>(null);
@@ -150,13 +153,14 @@ export default function App() {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       
+      const isOutsideHSignal = !hSignalRef.current || !hSignalRef.current.contains(target);
       const isOutsideHrSignal = !hrSignalRef.current || !hrSignalRef.current.contains(target);
       const isOutsideDSignal = !dSignalRef.current || !dSignalRef.current.contains(target);
       const isOutsideWSignal = !wSignalRef.current || !wSignalRef.current.contains(target);
       const isOutsideMSignal = !mSignalRef.current || !mSignalRef.current.contains(target);
       const isOutsideSector = !sectorRef.current || !sectorRef.current.contains(target);
 
-      if (isOutsideHrSignal && isOutsideDSignal && isOutsideWSignal && isOutsideMSignal) {
+      if (isOutsideHSignal && isOutsideHrSignal && isOutsideDSignal && isOutsideWSignal && isOutsideMSignal) {
         setActiveSignalDropdown(null);
       }
       
@@ -168,8 +172,8 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const toggleSignalFilter = (tf: '4hr' | '1d' | '1wk' | '1mo', filter: string) => {
-    const setter = tf === '4hr' ? setHrSignalFilter : tf === '1d' ? setDSignalFilter : tf === '1wk' ? setWSignalFilter : setMSignalFilter;
+  const toggleSignalFilter = (tf: '1h' | '4hr' | '1d' | '1wk' | '1mo', filter: string) => {
+    const setter = tf === '1h' ? setHSignalFilter : tf === '4hr' ? setHrSignalFilter : tf === '1d' ? setDSignalFilter : tf === '1wk' ? setWSignalFilter : setMSignalFilter;
     setter(prev => 
       prev.includes(filter) 
         ? prev.filter(f => f !== filter) 
@@ -219,27 +223,27 @@ export default function App() {
     }
   };
 
-  const fetchStocks = async () => {
+  const fetchStocks = async (refresh = false) => {
     try {
       setLoading(true);
       setError(null);
       fetchingTimeframes.current.clear();
-      setDisplayedCountsByTimeframe({ '4hr': 0, '1d': 0, '1wk': 0, '1mo': 0 });
-      const data = await fetchWithRetry('/api/stocks');
+      setDisplayedCountsByTimeframe({ '1h': 0, '4hr': 0, '1d': 0, '1wk': 0, '1mo': 0 });
+      const data = await fetchWithRetry(`/api/stocks${refresh ? '?refresh=true' : ''}`);
       if (Array.isArray(data)) {
         const uniqueData = data.slice(0, 500); // Explicitly cap client side too
         setSymbols(uniqueData);
-        setStocksByTimeframe({ '4hr': {}, '1d': {}, '1wk': {}, '1mo': {} });
+        setStocksByTimeframe({ '1h': {}, '4hr': {}, '1d': {}, '1wk': {}, '1mo': {} });
         
         // Start current timeframe first
-        const activePromise = fetchAllAnalysis(uniqueData.map(s => s.symbol), activeTimeframeRef.current);
+        const activePromise = fetchAllAnalysis(uniqueData.map(s => s.symbol), activeTimeframeRef.current, refresh);
         
         // Then start others in background with staggered delays
-        const otherTFs = (['4hr', '1d', '1wk', '1mo'] as const).filter(tf => tf !== activeTimeframeRef.current);
+        const otherTFs = (['1h', '4hr', '1d', '1wk', '1mo'] as const).filter(tf => tf !== activeTimeframeRef.current);
         (async () => {
           for (let i = 0; i < otherTFs.length; i++) {
             await new Promise(r => setTimeout(r, 1500 * (i + 1))); // Gap between switching timeframe focus
-            fetchAllAnalysis(uniqueData.map(s => s.symbol), otherTFs[i]);
+            fetchAllAnalysis(uniqueData.map(s => s.symbol), otherTFs[i], refresh);
           }
         })();
 
@@ -256,7 +260,7 @@ export default function App() {
     }
   };
 
-  const fetchAllAnalysis = async (list: string[], currentTF: string) => {
+  const fetchAllAnalysis = async (list: string[], currentTF: string, refresh = false) => {
     if (fetchingTimeframes.current.has(currentTF)) return;
     fetchingTimeframes.current.add(currentTF);
 
@@ -302,7 +306,7 @@ export default function App() {
                 const response = await fetch('/api/analysis/batch', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ symbols: chunk, timeframe: currentTF }),
+                  body: JSON.stringify({ symbols: chunk, timeframe: currentTF, refresh }),
                   signal: controller.signal
                 });
                 
@@ -387,7 +391,7 @@ export default function App() {
   const rankedStocks = useMemo(() => {
     return symbols.map(s => {
       // Find the first available analysis for this symbol to provide metadata
-      const analysis = stocksByTimeframe['1d'][s.symbol] || stocksByTimeframe['4hr'][s.symbol] || stocksByTimeframe['1wk'][s.symbol] || stocksByTimeframe['1mo'][s.symbol] || {
+      const analysis = stocksByTimeframe['1d'][s.symbol] || stocksByTimeframe['1h'][s.symbol] || stocksByTimeframe['4hr'][s.symbol] || stocksByTimeframe['1wk'][s.symbol] || stocksByTimeframe['1mo'][s.symbol] || {
         symbol: s.symbol,
         name: s.symbol,
         price: 0,
@@ -412,13 +416,14 @@ export default function App() {
     const list = rankedStocks.filter(s => {
       const matchesSearch = s.symbol.toLowerCase().includes(search.toLowerCase()) || 
                             s.name.toLowerCase().includes(search.toLowerCase());
+      const matchesH = hSignalFilter.length === 0 || hSignalFilter.includes(stocksByTimeframe['1h'][s.symbol]?.zone || 'Neutral Zone');
       const matchesHr = hrSignalFilter.length === 0 || hrSignalFilter.includes(stocksByTimeframe['4hr'][s.symbol]?.zone || 'Neutral Zone');
       const matchesD = dSignalFilter.length === 0 || dSignalFilter.includes(stocksByTimeframe['1d'][s.symbol]?.zone || 'Neutral Zone');
       const matchesW = wSignalFilter.length === 0 || wSignalFilter.includes(stocksByTimeframe['1wk'][s.symbol]?.zone || 'Neutral Zone');
       const matchesM = mSignalFilter.length === 0 || mSignalFilter.includes(stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral Zone');
       
       const matchesSector = sectorFilters.length === 0 || sectorFilters.includes(s.sector);
-      return matchesSearch && matchesHr && matchesD && matchesW && matchesM && matchesSector;
+      return matchesSearch && matchesH && matchesHr && matchesD && matchesW && matchesM && matchesSector;
     });
 
     return [...list].sort((a, b) => {
@@ -438,7 +443,7 @@ export default function App() {
       }
       return 0;
     });
-  }, [rankedStocks, search, sortBy, sortOrder, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe]);
+  }, [rankedStocks, search, sortBy, sortOrder, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe]);
 
   const formatMarketCap = (val: number) => {
     if (val >= 1e12) return `$${(val / 1e12).toFixed(2)}T`;
@@ -549,7 +554,7 @@ export default function App() {
           </button>
 
           <button 
-            onClick={fetchStocks}
+            onClick={() => fetchStocks(true)}
             className={`p-2 rounded-full transition-all active:scale-95 disabled:opacity-50 interactive-target ${isDarkMode ? 'hover:bg-white/10 text-slate-400 hover:text-white' : 'hover:bg-slate-200 text-slate-500 hover:text-slate-900'}`}
             disabled={loading}
             title="Force Sync"
@@ -730,7 +735,7 @@ export default function App() {
               <table className="w-full text-left border-collapse font-mono min-w-[550px] lg:min-w-0 table-fixed">
                 <thead>
                   <tr className={`border-b text-[9px] md:text-[10px] uppercase tracking-tighter md:tracking-wider font-bold transition-all duration-300 ${isDarkMode ? 'border-white/10 bg-slate-900/50 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
-                    <th className={`px-1 md:px-4 py-2.5 sticky left-0 backdrop-blur-md whitespace-nowrap w-[25%] font-mono transition-all duration-300 z-30 ${isDarkMode ? 'bg-slate-950/80 border-r border-white/10' : 'bg-white/80 border-r border-slate-200'}`}>
+                    <th className={`px-1 md:px-4 py-2.5 sticky left-0 backdrop-blur-md whitespace-nowrap w-[23%] font-mono transition-all duration-300 z-30 ${isDarkMode ? 'bg-slate-950/80 border-r border-white/10' : 'bg-white/80 border-r border-slate-200'}`}>
                       <div className="flex items-center gap-1 md:gap-3">
                         <span className="w-4 md:w-8 text-right pr-1 md:pr-2 border-r border-white/10 shrink-0">#</span>
                         <div className="flex-1 flex justify-center">
@@ -739,17 +744,17 @@ export default function App() {
                       </div>
                     </th>
                     <th 
-                      className={`px-1 md:px-4 py-3 cursor-pointer transition-colors whitespace-nowrap w-[15%] text-center ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
+                      className={`px-1 md:px-4 py-3 cursor-pointer transition-colors whitespace-nowrap w-[12%] text-center ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
                       onClick={() => handleSort('marketCap')}
                     >
                       Cap
                     </th>
                     {/* Header for signals with filters */}
-                    {['4hr', '1d', '1wk', '1mo'].map((tf) => (
+                    {['1h', '4hr', '1d', '1wk', '1mo'].map((tf) => (
                       <th key={tf} className={`px-1 md:px-4 py-3 text-center group relative whitespace-nowrap w-[10%]`}>
                         <div 
                           className="relative inline-block text-left" 
-                          ref={tf === '4hr' ? hrSignalRef : tf === '1d' ? dSignalRef : tf === '1wk' ? wSignalRef : mSignalRef}
+                          ref={tf === '1h' ? hSignalRef : tf === '4hr' ? hrSignalRef : tf === '1d' ? dSignalRef : tf === '1wk' ? wSignalRef : mSignalRef}
                         >
                           <button 
                             onClick={(e) => { 
@@ -758,13 +763,13 @@ export default function App() {
                             }}
                             className={`flex items-center justify-center gap-0.5 text-[8px] md:text-[10px] uppercase font-bold tracking-wider hover:text-indigo-400 transition-colors ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
                           >
-                            {tf === '4hr' ? '4H' : tf === '1d' ? 'D' : tf === '1wk' ? 'W' : 'M'}
-                            <Filter className={`w-2 h-2 ${ (tf === '4hr' ? hrSignalFilter : tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).length > 0 ? 'text-indigo-400' : ''}`} />
+                            {tf === '1h' ? '1H' : tf === '4hr' ? '4H' : tf === '1d' ? 'D' : tf === '1wk' ? 'W' : 'M'}
+                            <Filter className={`w-2 h-2 ${ (tf === '1h' ? hSignalFilter : tf === '4hr' ? hrSignalFilter : tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).length > 0 ? 'text-indigo-400' : ''}`} />
                           </button>
                           {activeSignalDropdown === tf && (
                             <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-3 w-40 border rounded-xl shadow-2xl p-2 z-[100] backdrop-blur-xl ${isDarkMode ? 'bg-slate-950 border-white/10' : 'bg-white border-slate-200'}`}>
                               <div className={`px-3 py-1.5 mb-1 text-[8px] font-black uppercase tracking-widest border-b border-white/5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                                {tf === '4hr' ? '4 Hour' : tf === '1d' ? 'Daily' : tf === '1wk' ? 'Weekly' : 'Monthly'} Filter
+                                {tf === '1h' ? 'Hourly' : tf === '4hr' ? '4 Hour' : tf === '1d' ? 'Daily' : tf === '1wk' ? 'Weekly' : 'Monthly'} Filter
                               </div>
                               {['Buy Zone', 'Value Zone', 'Sell Zone', 'Neutral Zone'].map((option) => (
                                 <button
@@ -774,13 +779,13 @@ export default function App() {
                                     toggleSignalFilter(tf as any, option); 
                                   }}
                                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-[9px] font-bold uppercase transition-all ${
-                                    (tf === '4hr' ? hrSignalFilter : tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).includes(option)
+                                    (tf === '1h' ? hSignalFilter : tf === '4hr' ? hrSignalFilter : tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).includes(option)
                                       ? (isDarkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-50 text-indigo-600')
                                       : (isDarkMode ? 'text-slate-400 hover:bg-white/5' : 'text-slate-500 hover:bg-slate-100')
                                   }`}
                                 >
                                   <span>{option}</span>
-                                  {(tf === '4hr' ? hrSignalFilter : tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).includes(option) && <Check className="w-3 h-3" />}
+                                  {(tf === '1h' ? hSignalFilter : tf === '4hr' ? hrSignalFilter : tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).includes(option) && <Check className="w-3 h-3" />}
                                 </button>
                               ))}
                             </div>
@@ -824,6 +829,9 @@ export default function App() {
                           {formatMarketCap(stock.marketCap)}
                         </td>
                         {/* Cell for signals */}
+                        <td id={`h-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
+                          {getZoneBadge(stocksByTimeframe['1h'][stock.symbol]?.zone || 'Neutral Zone')}
+                        </td>
                         <td id={`hr-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
                           {getZoneBadge(stocksByTimeframe['4hr'][stock.symbol]?.zone || 'Neutral Zone')}
                         </td>
