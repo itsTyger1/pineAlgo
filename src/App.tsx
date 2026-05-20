@@ -584,21 +584,23 @@ export default function App() {
 
       <main className="relative z-10 w-full max-w-full px-4 md:px-8 text-left py-4 md:py-8">
         {/* Status System Overlay */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 font-mono">
-          <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 md:gap-4 mb-3 md:mb-5 font-mono">
+          <div className="flex flex-row items-center justify-start gap-1 md:gap-2 overflow-x-auto whitespace-nowrap w-full md:w-auto pb-0.5 md:pb-0 select-none">
             {/* Market Flow Status */}
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border backdrop-blur-md ${isDarkMode ? 'bg-white/5' : 'bg-slate-100'} ${stats.buyCount + stats.valueCount > stats.sellCount ? 'border-emerald-500/30 text-emerald-400' : 'border-rose-500/30 text-rose-400'}`}>
-              <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${stats.buyCount + stats.valueCount > stats.sellCount ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.5)]'}`}></div>
-              <span className="text-[10px] font-black uppercase tracking-widest">
-                Flow: {stats.buyCount + stats.valueCount > stats.sellCount ? 'Bullish' : 'Bearish'}
+            <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full border backdrop-blur-md shrink-0 ${isDarkMode ? 'bg-white/5' : 'bg-slate-100'} ${stats.buyCount + stats.valueCount > stats.sellCount ? 'border-emerald-500/30 text-emerald-400' : 'border-rose-500/30 text-rose-400'}`}>
+              <div className={`w-1 h-1 rounded-full animate-pulse ${stats.buyCount + stats.valueCount > stats.sellCount ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.5)]'}`}></div>
+              <span className="text-[7.5px] md:text-[9.5px] font-black uppercase tracking-wider">
+                <span className="hidden md:inline">Flow: {stats.buyCount + stats.valueCount > stats.sellCount ? 'Bullish' : 'Bearish'}</span>
+                <span className="md:hidden">{stats.buyCount + stats.valueCount > stats.sellCount ? 'Bull' : 'Bear'}</span>
               </span>
             </div>
 
             {/* Sync Timer */}
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${isDarkMode ? 'border-white/10 bg-white/5 text-slate-400' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
-              <RefreshCcw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-              <span className="text-[10px] font-bold uppercase tracking-wider">
-                {lastSynced ? `Synced: ${lastSynced.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Calibrating...'}
+            <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full border shrink-0 ${isDarkMode ? 'border-white/10 bg-white/5 text-slate-400' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
+              <RefreshCcw className={`w-2 h-2 md:w-3 md:h-3 ${loading ? 'animate-spin' : ''}`} />
+              <span className="text-[7.5px] md:text-[9.5px] font-bold uppercase tracking-wider">
+                <span className="hidden md:inline">{lastSynced ? `Synced: ${lastSynced.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Calibrating...'}</span>
+                <span className="md:hidden">{lastSynced ? `Sync: ${lastSynced.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : 'Calibrating'}</span>
               </span>
             </div>
 
@@ -606,12 +608,15 @@ export default function App() {
             <AnimatePresence>
               {!loading && stats.total > 0 && (
                 <motion.div 
-                  initial={{ opacity: 0, x: -10 }}
+                  initial={{ opacity: 0, x: -5 }}
                   animate={{ opacity: 1, x: 0 }}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400"
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 shrink-0"
                 >
-                  <Check className="w-3 h-3" />
-                  <span className="text-[10px] font-black uppercase tracking-widest">Analysis Core Ready</span>
+                  <Check className="w-2 h-2 md:w-3 md:h-3" />
+                  <span className="text-[7.5px] md:text-[9.5px] font-black uppercase tracking-wider">
+                    <span className="hidden md:inline">Analysis Core Ready</span>
+                    <span className="md:hidden">Ready</span>
+                  </span>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -736,10 +741,10 @@ export default function App() {
                       </div>
                     </th>
                     <th 
-                      className={`px-1 md:px-4 py-3 cursor-pointer transition-colors whitespace-nowrap w-[12%] text-center ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
-                      onClick={() => handleSort('marketCap')}
+                      className={`px-1 md:px-4 py-3 text-center cursor-pointer transition-colors whitespace-nowrap w-[15%] ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
+                      onClick={() => handleSort('marketCap')} /* Temporary placeholder */
                     >
-                      Cap
+                      Price
                     </th>
                     {/* Header for signals with filters */}
                     {['1h', '4hr', '1d', '1wk', '1mo'].map((tf) => (
@@ -786,10 +791,10 @@ export default function App() {
                       </th>
                     ))}
                     <th 
-                      className={`px-1 md:px-4 py-3 text-center cursor-pointer transition-colors whitespace-nowrap w-[15%] ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
-                      onClick={() => handleSort('marketCap')} /* Temporary placeholder */
+                      className={`px-1 md:px-4 py-3 cursor-pointer transition-colors whitespace-nowrap w-[12%] text-center ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
+                      onClick={() => handleSort('marketCap')}
                     >
-                      Price
+                      Cap
                     </th>
                   </tr>
                 </thead>
@@ -803,19 +808,27 @@ export default function App() {
                           <div className="flex items-center gap-1 md:gap-3">
                             <span className={`text-[9px] md:text-[10px] font-black w-4 md:w-8 text-right pr-1 md:pr-2 border-r shrink-0 ${isDarkMode ? 'text-slate-600 border-white/10' : 'text-slate-400 border-slate-200'}`}>{stock.mcRank}</span>
                             <div className="flex-1 flex flex-col items-center">
-                              <a 
-                                href="#" 
-                                onClick={(e) => { e.preventDefault(); handleChartRedirect(stock.symbol); }}
-                                className={`text-[11px] md:text-sm font-black group-hover:text-indigo-400 transition-colors uppercase tracking-tighter underline ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
-                              >
-                                {stock.symbol}
-                              </a>
-                              <span className="text-[8px] md:text-[9px] text-indigo-400/60 font-bold uppercase truncate max-w-[60px] md:max-w-none">{stock.sector}</span>
+                               <a 
+                                 href="#" 
+                                 onClick={(e) => { e.preventDefault(); handleChartRedirect(stock.symbol); }}
+                                 className={`text-[11px] md:text-sm font-black group-hover:text-indigo-400 transition-colors uppercase tracking-tighter underline ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                               >
+                                 {stock.symbol}
+                               </a>
+                               <span className="text-[8px] md:text-[9px] text-indigo-400/60 font-bold uppercase truncate max-w-[60px] md:max-w-none">{stock.sector}</span>
                             </div>
                           </div>
                         </td>
-                        <td className={`px-1 md:px-4 py-3 text-[10px] md:text-[11px] font-bold whitespace-nowrap text-center ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                          {formatMarketCap(stock.marketCap)}
+                        <td className="px-1 md:px-4 py-3 text-center">
+                          <div className={`text-[10px] md:text-sm font-bold ${
+                            stock.change > 0 
+                              ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') 
+                              : stock.change < 0 
+                              ? (isDarkMode ? 'text-rose-400' : 'text-rose-600') 
+                              : (isDarkMode ? 'text-white' : 'text-slate-900')
+                          }`}>
+                            ${stock.price.toFixed(2)}
+                          </div>
                         </td>
                         {/* Cell for signals */}
                         <td id={`h-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
@@ -833,10 +846,8 @@ export default function App() {
                         <td id={`m-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
                           {getZoneBadge(stocksByTimeframe['1mo'][stock.symbol]?.zone || 'Neutral Zone')}
                         </td>
-                        <td className="px-1 md:px-4 py-3 text-center">
-                          <div className={`text-[10px] md:text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                            ${stock.price.toFixed(2)}
-                          </div>
+                        <td className={`px-1 md:px-4 py-3 text-[10px] md:text-[11px] font-bold whitespace-nowrap text-center ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                          {formatMarketCap(stock.marketCap)}
                         </td>
                       </tr>
                     ))}
@@ -889,7 +900,13 @@ export default function App() {
                       <p className="text-[10px] text-slate-500 mt-2 uppercase font-bold tracking-widest truncate max-w-[120px]">{stock.name}</p>
                     </div>
                     <div className="text-right">
-                      <div className={`text-sm font-black tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>${stock.price.toFixed(2)}</div>
+                      <div className={`text-sm font-black tracking-widest ${
+                        stock.change > 0 
+                          ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') 
+                          : stock.change < 0 
+                          ? (isDarkMode ? 'text-rose-400' : 'text-rose-600') 
+                          : (isDarkMode ? 'text-white' : 'text-slate-900')
+                      }`}>${stock.price.toFixed(2)}</div>
                       <div className={`text-[10px] font-bold mt-1 ${stock.change >= 0 ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-600')}`}>
                         {stock.change >= 0 ? '↑' : '↓'} {Math.abs(stock.change).toFixed(2)}%
                       </div>
