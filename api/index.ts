@@ -53,8 +53,8 @@ function calculateRSI(data: number[], length: number): number | null {
 class RequestQueue {
   private queue: { fn: () => Promise<any>, resolve: (v: any) => void, reject: (e: any) => void, timeout: number }[] = [];
   private activeCount = 0;
-  private maxConcurrency = 8; // Reduced concurrency for better stability
-  private delayMs = 60; // Slightly higher base delay
+  private maxConcurrency = 15; // Higher concurrency for faster throughput
+  private delayMs = 30; // Lower base delay for speed
 
   async add<T>(fn: () => Promise<T>, timeoutMs = 25000): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -84,8 +84,8 @@ class RequestQueue {
       } catch (error: any) {
         if (error?.message?.includes('Too Many Requests') || error?.status === 429) {
           console.error("RATE LIMIT DETECTED (429): Backing off...");
-          this.delayMs = Math.min(this.delayMs + 300, 2000); // More aggressive backoff
-          this.maxConcurrency = Math.max(1, this.maxConcurrency - 2); // Reduce concurrency more significantly
+          this.delayMs = Math.min(this.delayMs + 200, 1500); // Backoff on rate limit
+          this.maxConcurrency = Math.max(3, this.maxConcurrency - 2); // Reduce concurrency but keep minimum
         }
         reject(error);
       } finally {
@@ -93,8 +93,8 @@ class RequestQueue {
         await new Promise(r => setTimeout(r, this.delayMs + jitter));
         this.activeCount--;
         // Recover stability slowly
-        if (this.delayMs > 50) this.delayMs -= 1; // Slower recovery
-        if (this.maxConcurrency < 12 && Math.random() > 0.95) this.maxConcurrency++; // More rare concurrency increase
+        if (this.delayMs > 30) this.delayMs -= 2; // Faster recovery
+        if (this.maxConcurrency < 15 && Math.random() > 0.9) this.maxConcurrency++; // Recover concurrency
         this.process();
       }
     };
@@ -387,11 +387,11 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
 
   let chartResult;
   let chartRetryCount = 0;
-  const maxChartRetries = 5; // Increased chart retries
+  const maxChartRetries = 2; // Fail fast to avoid blocking batches
   
   while (chartRetryCount <= maxChartRetries) {
     try {
-      chartResult = await yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }), 15000); // Increased timeout to 15s
+      chartResult = await yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }), 12000);
       if (chartResult && chartResult.quotes && chartResult.quotes.length > 0) {
         break; // Success
       }
@@ -399,12 +399,11 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     } catch (e) {
       chartRetryCount++;
       if (chartRetryCount > maxChartRetries) {
-        // console.error(`Chart failed for ${symbol} after ${chartRetryCount} attempts`);
         chartResult = { quotes: [] };
       } else {
-        // Exponential backoff for charts too
-        const chartBackoff = Math.pow(2, chartRetryCount) * 800; // Increased backoff
-        await new Promise(r => setTimeout(r, chartBackoff + Math.random() * 500));
+        // Fast exponential backoff
+        const chartBackoff = Math.pow(2, chartRetryCount) * 400;
+        await new Promise(r => setTimeout(r, chartBackoff + Math.random() * 200));
       }
     }
   }
@@ -544,31 +543,32 @@ app.post("/api/analysis/batch", async (req, res) => {
 
   try {
     const fetchBatchTask = async () => {
-      // 1. Fetch missing quotes in one go (batch optimized)
+      // 1. Fetch ALL missing quotes in one go (batch optimized)
       const missingQuotes = refresh
         ? symbols
         : symbols.filter(s => !quoteCache[s] || (Date.now() - quoteCache[s].timestamp) > META_CACHE_TTL);
-      const quotePromise = missingQuotes.length > 0 
-        ? fetchQuoteWithRetry(missingQuotes).then((results: any) => {
-            if (Array.isArray(results)) {
-              results.forEach((q: any) => {
-                if (q && q.symbol) quoteCache[q.symbol] = { data: q, timestamp: Date.now() };
-              });
-            }
-          })
-        : Promise.resolve();
+      if (missingQuotes.length > 0) {
+        try {
+          const results = await fetchQuoteWithRetry(missingQuotes);
+          if (Array.isArray(results)) {
+            results.forEach((q: any) => {
+              if (q && q.symbol) quoteCache[q.symbol] = { data: q, timestamp: Date.now() };
+            });
+          }
+        } catch (e) {
+          // Non-fatal: analysis will fetch individually
+        }
+      }
 
-      // 2. Fetch missing summaries (parallel but limited) - use long cache
+      // 2. Fire off summary fetches in background (don't block analysis)
       const missingSummaries = symbols.filter(s => !summaryCache[s] || (Date.now() - summaryCache[s].timestamp) > SUMMARY_CACHE_TTL);
-      const summaryPromises = missingSummaries.slice(0, 10).map(sym => 
+      missingSummaries.slice(0, 10).forEach(sym => 
         yfQueue.add(() => yahooFinance.quoteSummary(sym, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
           if (res) summaryCache[sym] = { data: res, timestamp: Date.now() };
         }).catch(() => null), 3000)
       );
 
-      // Wait for core metadata before analysis
-      await Promise.all([quotePromise, ...summaryPromises]);
-
+      // 3. Run all analyses in parallel (don't wait for summaries)
       const analysisPromises = symbols.map(async (sym) => {
         try {
           return await getAnalysis(sym, timeframe, refresh);

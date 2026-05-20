@@ -235,19 +235,15 @@ export default function App() {
         setSymbols(uniqueData);
         setStocksByTimeframe({ '1h': {}, '4hr': {}, '1d': {}, '1wk': {}, '1mo': {} });
         
-        // Start current timeframe first
-        const activePromise = fetchAllAnalysis(uniqueData.map(s => s.symbol), activeTimeframeRef.current, refresh);
-        
-        // Then start others in background with staggered delays
-        const otherTFs = (['1h', '4hr', '1d', '1wk', '1mo'] as const).filter(tf => tf !== activeTimeframeRef.current);
-        (async () => {
-          for (let i = 0; i < otherTFs.length; i++) {
-            await new Promise(r => setTimeout(r, 1500 * (i + 1))); // Gap between switching timeframe focus
-            fetchAllAnalysis(uniqueData.map(s => s.symbol), otherTFs[i], refresh);
-          }
-        })();
+        // Start ALL timeframes in parallel for fastest possible load
+        const allTFs = ['1h', '4hr', '1d', '1wk', '1mo'] as const;
+        const allPromises = allTFs.map(tf => 
+          fetchAllAnalysis(uniqueData.map(s => s.symbol), tf, refresh)
+        );
 
-        await activePromise;
+        // Wait for the active timeframe to finish (for loading state)
+        const activeIndex = allTFs.indexOf(activeTimeframeRef.current);
+        await allPromises[activeIndex];
       } else {
         setError('Failed to fetch stock list');
       }
@@ -268,14 +264,13 @@ export default function App() {
     const isCurrent = () => activeTimeframeRef.current === currentTF;
     if (isCurrent()) setLoading(true);
     
-    // Reduced batch size for higher stability
-    const batchSize = 10; 
+    const batchSize = 50; // Larger batches = fewer HTTP round-trips
     const chunks = [];
     for (let i = 0; i < list.length; i += batchSize) {
       chunks.push(list.slice(i, i + batchSize));
     }
 
-    const maxConcurrentBatches = 1; // Sequential to avoid overwhelming the server queue
+    const maxConcurrentBatches = 3; // Multiple batches in flight simultaneously
     const activeRequests = new Set();
     const remainingChunks = [...chunks];
 
@@ -297,11 +292,8 @@ export default function App() {
 
             while (!success && retryCount <= maxRetries) {
               try {
-                // Staggered starts
-                await new Promise(r => setTimeout(r, Math.random() * 300));
-                
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 60000); // Increased timeout to 60s
+                const timeoutId = setTimeout(() => controller.abort(), 60000);
 
                 const response = await fetch('/api/analysis/batch', {
                   method: 'POST',
@@ -802,12 +794,9 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody className={`divide-y transition-all duration-300 ${isDarkMode ? 'divide-white/5' : 'divide-slate-200'}`}>
-                  <AnimatePresence>
                     {filteredStocks.map((stock, index) => (
-                      <motion.tr 
+                      <tr 
                         key={`${stock.symbol}-${index}`}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
                         className={`group transition-colors border-l-2 border-l-transparent hover:border-l-indigo-500 ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
                       >
                         <td className={`px-1 md:px-4 py-2.5 sticky left-0 backdrop-blur-md whitespace-nowrap transition-all duration-300 z-30 ${isDarkMode ? 'bg-slate-950/80' : 'bg-white/80 border-r border-slate-100/50'}`}>
@@ -849,9 +838,8 @@ export default function App() {
                             ${stock.price.toFixed(2)}
                           </div>
                         </td>
-                      </motion.tr>
+                      </tr>
                     ))}
-                  </AnimatePresence>
                 </tbody>
               </table>
               {filteredStocks.length === 0 && !loading && (
