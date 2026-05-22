@@ -92,9 +92,9 @@ class RequestQueue {
         const jitter = Math.random() * 50;
         await new Promise(r => setTimeout(r, this.delayMs + jitter));
         this.activeCount--;
-        // Recover stability slowly
-        if (this.delayMs > 30) this.delayMs -= 2; // Faster recovery
-        if (this.maxConcurrency < 15 && Math.random() > 0.9) this.maxConcurrency++; // Recover concurrency
+        // Recover stability quickly
+        if (this.delayMs > 30) this.delayMs = Math.max(30, this.delayMs - 25); // 12.5x faster recovery
+        if (this.maxConcurrency < 15 && Math.random() > 0.5) this.maxConcurrency = Math.min(15, this.maxConcurrency + 1); // 5x faster concurrency recovery
         this.process();
       }
     };
@@ -385,7 +385,7 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     }
   }
 
-  let chartResult;
+  let chartResult: any;
   let chartRetryCount = 0;
   const maxChartRetries = 2; // Fail fast to avoid blocking batches
   

@@ -802,10 +802,13 @@ export default function App() {
         {view === 'table' ? (
           <div className={`backdrop-blur-xl border rounded-2xl flex flex-col shadow-2xl transition-all duration-300 w-full ${isDarkMode ? 'bg-white/5 border-white/10 shadow-black/40' : 'bg-white border-slate-200 shadow-slate-200/50'}`}>
             <div className={`overflow-x-auto rounded-t-2xl ${filteredStocks.length < 4 ? 'min-h-[280px]' : ''}`}>
-              <table className="w-full text-left border-collapse font-mono min-w-[550px] lg:min-w-0 table-fixed">
+              <table className="w-full text-left border-separate border-spacing-0 font-mono min-w-[550px] lg:min-w-0 table-fixed">
                 <thead>
-                  <tr className={`border-b text-[9px] md:text-[10px] uppercase tracking-tighter md:tracking-wider font-bold transition-all duration-300 ${isDarkMode ? 'border-white/10 bg-slate-900/50 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
-                    <th className={`px-1 md:px-4 py-2.5 sticky left-0 backdrop-blur-md whitespace-nowrap w-[23%] font-mono transition-all duration-300 z-30 ${isDarkMode ? 'bg-slate-950/80 border-r border-white/10' : 'bg-white/80 border-r border-slate-200'}`}>
+                  <tr className={`text-[9px] md:text-[10px] uppercase tracking-tighter md:tracking-wider font-bold transition-all duration-300 ${isDarkMode ? 'bg-slate-900/50 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>
+                    <th
+                      className={`px-1 md:px-4 py-2.5 sticky left-0 whitespace-nowrap w-[23%] font-mono transition-colors duration-150 z-30 border-l-2 border-l-transparent border-b ${isDarkMode ? 'bg-slate-950 border-r border-white/10 border-b-white/10' : 'bg-white border-r border-slate-200 border-b-slate-200'}`}
+                      style={{ transform: 'translate3d(0, 0, 0)', backfaceVisibility: 'hidden', willChange: 'transform' }}
+                    >
                       <div className="flex items-center gap-1 md:gap-3">
                         <span className="w-4 md:w-8 text-right pr-1 md:pr-2 border-r border-white/10 shrink-0">#</span>
                         <div className="flex-1 flex justify-center">
@@ -814,14 +817,13 @@ export default function App() {
                       </div>
                     </th>
                     <th
-                      className={`px-1 md:px-4 py-3 text-center cursor-pointer transition-colors whitespace-nowrap w-[15%] ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
-                      onClick={() => handleSort('marketCap')} /* Temporary placeholder */
+                      className={`px-1 md:px-4 py-3 text-center cursor-pointer transition-colors whitespace-nowrap w-[15%] border-b ${isDarkMode ? 'border-b-white/10 hover:text-white' : 'border-b-slate-200 hover:text-slate-950'}`}
+                      onClick={() => handleSort('marketCap')}
                     >
                       Price
                     </th>
-                    {/* Header for signals with filters */}
                     {['1h', '4hr', '1d', '1wk', '1mo'].map((tf) => (
-                      <th key={tf} className={`px-1 md:px-4 py-3 text-center group relative whitespace-nowrap w-[10%]`}>
+                      <th key={tf} className={`px-1 md:px-4 py-3 text-center group relative whitespace-nowrap w-[10%] border-b ${isDarkMode ? 'border-b-white/10' : 'border-b-slate-200'}`}>
                         <div
                           className="relative inline-block text-left"
                           ref={tf === '1h' ? hSignalRef : tf === '4hr' ? hrSignalRef : tf === '1d' ? dSignalRef : tf === '1wk' ? wSignalRef : mSignalRef}
@@ -863,35 +865,51 @@ export default function App() {
                       </th>
                     ))}
                     <th
-                      className={`px-1 md:px-4 py-3 cursor-pointer transition-colors whitespace-nowrap w-[12%] text-center ${isDarkMode ? 'hover:text-white' : 'hover:text-slate-950'}`}
+                      className={`px-1 md:px-4 py-3 cursor-pointer transition-colors whitespace-nowrap w-[12%] text-center border-b ${isDarkMode ? 'border-b-white/10 hover:text-white' : 'border-b-slate-200 hover:text-slate-950'}`}
                       onClick={() => handleSort('marketCap')}
                     >
                       Cap
                     </th>
                   </tr>
                 </thead>
-                <tbody className={`divide-y transition-all duration-300 ${isDarkMode ? 'divide-white/5' : 'divide-slate-200'}`}>
+                <tbody className="transition-all duration-300">
                   {visibleStocks.map((stock) => (
                     <tr
                       key={stock.symbol}
-                      className={`group transition-colors border-l-2 border-l-transparent hover:border-l-indigo-500 ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
+                      className={`group transition-colors ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}
                     >
-                      <td className={`px-1 md:px-4 py-2.5 sticky left-0 backdrop-blur-md whitespace-nowrap transition-all duration-300 z-30 ${isDarkMode ? 'bg-slate-950/80' : 'bg-white/80 border-r border-slate-100/50'}`}>
+                      <td
+                        className={`px-1 md:px-4 py-2.5 sticky left-0 whitespace-nowrap transition-colors duration-150 z-30 border-l-2 border-l-transparent group-hover:border-l-indigo-500 border-b ${isDarkMode ? 'bg-slate-950 border-r border-white/10 border-b-white/5 group-hover:bg-slate-900' : 'bg-white border-r border-slate-200 border-b-slate-200 group-hover:bg-slate-50'}`}
+                        style={{ transform: 'translate3d(0, 0, 0)', backfaceVisibility: 'hidden', willChange: 'transform' }}
+                      >
                         <div className="flex items-center gap-1 md:gap-3">
                           <span className={`text-[9px] md:text-[10px] font-black w-4 md:w-8 text-right pr-1 md:pr-2 border-r shrink-0 ${isDarkMode ? 'text-slate-600 border-white/10' : 'text-slate-400 border-slate-200'}`}>{stock.mcRank}</span>
                           <div className="flex-1 flex flex-col items-center">
-                            <a
-                              href="#"
-                              onClick={(e) => { e.preventDefault(); handleChartRedirect(stock.symbol); }}
-                              className={`text-[11px] md:text-sm font-black group-hover:text-indigo-400 transition-colors uppercase tracking-tighter underline ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
-                            >
-                              {stock.symbol}
-                            </a>
-                            <span className="text-[8px] md:text-[9px] text-indigo-400/60 font-bold uppercase truncate max-w-[60px] md:max-w-none">{stock.sector}</span>
+                            <div className="relative inline-flex items-center justify-center">
+                              <a
+                                href="#"
+                                onClick={(e) => { e.preventDefault(); handleChartRedirect(stock.symbol); }}
+                                className={`text-[11px] md:text-sm font-black group-hover:text-indigo-400 transition-colors uppercase tracking-tighter underline ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                              >
+                                {stock.symbol}
+                              </a>
+                              {stock.change !== undefined && stock.change !== null && stock.price > 0 && (
+                                <span className={`absolute left-full ml-1.5 whitespace-nowrap text-[7px] md:text-[9px] font-mono font-bold leading-none ${
+                                  stock.change === 0
+                                    ? (isDarkMode ? 'text-slate-400' : 'text-slate-500')
+                                    : stock.change > 0
+                                    ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')
+                                    : (isDarkMode ? 'text-rose-400' : 'text-rose-600')
+                                }`}>
+                                  {stock.change > 0 ? '+' : ''}{stock.change.toFixed(2)}%
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[8px] md:text-[9px] text-indigo-400/60 font-bold uppercase truncate max-w-[60px] md:max-w-none mt-1">{stock.sector}</span>
                           </div>
                         </div>
                       </td>
-                      <td className="px-1 md:px-4 py-3 text-center">
+                      <td className={`px-1 md:px-4 py-3 text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}>
                         <div className={`text-[10px] md:text-sm font-bold ${
                           stock.price === 0 || stock.change === 0
                             ? (isDarkMode ? 'text-white' : 'text-slate-900')
@@ -902,30 +920,29 @@ export default function App() {
                           ${stock.price.toFixed(2)}
                         </div>
                       </td>
-                      {/* Cell for signals */}
-                      <td id={`h-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
+                      <td id={`h-signal-${stock.symbol}`} className={`px-1 md:px-4 py-3 text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}>
                         {getZoneBadge(stocksByTimeframe['1h'][stock.symbol]?.zone || 'Neutral Zone')}
                       </td>
-                      <td id={`hr-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
+                      <td id={`hr-signal-${stock.symbol}`} className={`px-1 md:px-4 py-3 text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}>
                         {getZoneBadge(stocksByTimeframe['4hr'][stock.symbol]?.zone || 'Neutral Zone')}
                       </td>
-                      <td id={`d-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
+                      <td id={`d-signal-${stock.symbol}`} className={`px-1 md:px-4 py-3 text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}>
                         {getZoneBadge(stocksByTimeframe['1d'][stock.symbol]?.zone || 'Neutral Zone')}
                       </td>
-                      <td id={`w-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
+                      <td id={`w-signal-${stock.symbol}`} className={`px-1 md:px-4 py-3 text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}>
                         {getZoneBadge(stocksByTimeframe['1wk'][stock.symbol]?.zone || 'Neutral Zone')}
                       </td>
-                      <td id={`m-signal-${stock.symbol}`} className="px-1 md:px-4 py-3 text-center">
+                      <td id={`m-signal-${stock.symbol}`} className={`px-1 md:px-4 py-3 text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}>
                         {getZoneBadge(stocksByTimeframe['1mo'][stock.symbol]?.zone || 'Neutral Zone')}
                       </td>
-                      <td className={`px-1 md:px-4 py-3 text-[10px] md:text-[11px] font-bold whitespace-nowrap text-center ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                      <td className={`px-1 md:px-4 py-3 text-[10px] md:text-[11px] font-bold whitespace-nowrap text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200'} ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                         {formatMarketCap(stock.marketCap)}
                       </td>
                     </tr>
                   ))}
                   {visibleStocks.length < filteredStocks.length && (
                     <tr ref={observerRef}>
-                      <td colSpan={8} className="py-4 text-center text-xs font-black text-slate-500 uppercase tracking-widest">
+                      <td colSpan={8} className={`py-4 text-center text-xs font-black text-slate-500 uppercase tracking-widest border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200'}`}>
                         <div className="flex items-center justify-center gap-2">
                           <RefreshCcw className="w-3.5 h-3.5 animate-spin text-indigo-500" />
                           <span>Loading More Stocks...</span>
