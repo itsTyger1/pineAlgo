@@ -7,13 +7,21 @@
 }
 
 @layer base {
-html, body {
-    @apply h-full bg-slate-950;
+  html {
+    @apply h-full transition-colors duration-300;
     overflow-x: hidden;
   }
 
+  html.dark, html.dark body {
+    @apply bg-slate-950 text-slate-100;
+  }
+
+  html:not(.dark), html:not(.dark) body {
+    @apply bg-[#FAF9F5] text-slate-700;
+  }
+
   body {
-    @apply text-slate-100 antialiased;
+    @apply h-full antialiased;
     -webkit-tap-highlight-color: transparent;
     overflow-y: auto;
     position: relative;
@@ -50,3 +58,112 @@ html, body {
     @apply min-h-[44px] min-w-[44px] flex items-center justify-center;
   }
 }
+
+/* --- Premium Table Aesthetic Overrides (Light & Dark) --- */
+
+/* Light Mode Table Variables and Explicit Rule Enforcement */
+html:not(.dark) {
+  --table-border-color: rgba(226, 232, 240, 0.7);
+  --table-sticky-border: rgba(203, 213, 225, 0.6);
+  --table-header-bg: #f8fafc;
+  --table-header-text: #475569;
+  --table-body-text: #0f172a;
+  --table-row-hover: rgba(241, 245, 249, 0.8);
+  --table-shadow: rgba(0, 0, 0, 0.02);
+}
+
+html:not(.dark) table {
+  background-color: #ffffff !important;
+}
+
+html:not(.dark) th {
+  background-color: var(--table-header-bg) !important;
+  color: var(--table-header-text) !important;
+  border-bottom: 1px solid var(--table-border-color) !important;
+}
+
+html:not(.dark) th span,
+html:not(.dark) th button {
+  color: var(--table-header-text) !important;
+}
+
+html:not(.dark) th button:hover {
+  color: #4f46e5 !important;
+}
+
+html:not(.dark) td {
+  border-bottom: 1px solid var(--table-border-color) !important;
+  color: #334155 !important;
+}
+
+html:not(.dark) td a {
+  color: var(--table-body-text) !important;
+  text-decoration: underline !important;
+  text-decoration-color: rgba(99, 102, 241, 0.3) !important;
+  text-underline-offset: 3px;
+  transition: all 0.2s ease;
+}
+
+html:not(.dark) td a:hover {
+  color: #4f46e5 !important;
+  text-decoration-color: #4f46e5 !important;
+}
+
+html:not(.dark) .sector-label {
+  color: #4f46e5 !important;
+  opacity: 0.9;
+}
+
+/* Dark Mode Table Variables */
+html.dark {
+  --table-border-color: rgba(255, 255, 255, 0.06);
+  --table-sticky-border: rgba(255, 255, 255, 0.12);
+  --table-header-bg: rgba(15, 23, 42, 0.7);
+  --table-row-hover: rgba(255, 255, 255, 0.035);
+}
+
+/* --- Sticky Column Styling & Shadow Guards to eliminate horizontal jitter & bleed --- */
+th.sticky,
+td.sticky {
+  position: sticky !important;
+  left: 0 !important;
+  z-index: 30 !important;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+/* Light Mode Sticky Cell Custom Solid Backgrounds & Divider Shadows */
+html:not(.dark) th.sticky {
+  background-color: var(--table-header-bg) !important;
+  border-right: 1px solid var(--table-sticky-border) !important;
+  box-shadow: 4px 0 8px -3px rgba(0, 0, 0, 0.03) !important;
+}
+
+html:not(.dark) td.sticky {
+  background-color: #ffffff !important;
+  border-right: 1px solid var(--table-sticky-border) !important;
+  box-shadow: 4px 0 8px -3px rgba(0, 0, 0, 0.03) !important;
+}
+
+html:not(.dark) tr:hover td.sticky {
+  background-color: var(--table-row-hover) !important;
+}
+
+/* Dark Mode Sticky Cell Custom Solid Backgrounds & Divider Shadows */
+html.dark th.sticky {
+  background-color: #0f172a !important; /* solid slate-900 to block text scroll background bleed */
+  border-right: 1px solid var(--table-sticky-border) !important;
+  box-shadow: 6px 0 12px -4px rgba(0, 0, 0, 0.4) !important;
+}
+
+html.dark td.sticky {
+  background-color: #0b0f19 !important; /* solid slate-950 matching solid color */
+  border-right: 1px solid var(--table-sticky-border) !important;
+  box-shadow: 6px 0 12px -4px rgba(0, 0, 0, 0.4) !important;
+}
+
+html.dark tr:hover td.sticky {
+  background-color: var(--table-row-hover) !important;
+}
+
