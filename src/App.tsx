@@ -20,7 +20,8 @@ import {
   Check,
   ChevronDown,
   Sun,
-  Moon
+  Moon,
+  Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -151,6 +152,7 @@ export default function App() {
   const [sectorFilters, setSectorFilters] = useState<string[]>([]);
   const [showSectorDropdown, setShowSectorDropdown] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [showGoldenStarsOnly, setShowGoldenStarsOnly] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     try {
@@ -425,6 +427,29 @@ export default function App() {
     window.open(webUrl, '_blank');
   };
 
+  // Golden Star algorithm: identifies prime buy entries for long-term (3-5yr) investments
+  const goldenStarMap = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    symbols.forEach(s => {
+      const h1Zone = stocksByTimeframe['1h'][s.symbol]?.zone || 'Neutral Zone';
+      const h4Zone = stocksByTimeframe['4hr'][s.symbol]?.zone || 'Neutral Zone';
+      const d1Zone = stocksByTimeframe['1d'][s.symbol]?.zone || 'Neutral Zone';
+      const w1Zone = stocksByTimeframe['1wk'][s.symbol]?.zone || 'Neutral Zone';
+      const m1Zone = stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral Zone';
+
+      const macroBullish = w1Zone === 'Buy Zone' && m1Zone === 'Buy Zone';
+      const deepPullback = d1Zone === 'Value Zone' && h4Zone === 'Value Zone';
+      const microBleed = h1Zone === 'Value Zone' || h1Zone === 'Sell Zone';
+
+      map[s.symbol] = macroBullish && deepPullback && microBleed;
+    });
+    return map;
+  }, [symbols, stocksByTimeframe]);
+
+  const goldenStarCount = useMemo(() => {
+    return Object.values(goldenStarMap).filter(Boolean).length;
+  }, [goldenStarMap]);
+
   const rankedStocks = useMemo(() => {
     return symbols.map(s => {
       // Find the first available analysis for this symbol to provide metadata
@@ -445,10 +470,11 @@ export default function App() {
       return {
         ...analysis,
         name: s.name || analysis.name || s.symbol,
-        mcRank: symbolRanks[s.symbol] || 999
+        mcRank: symbolRanks[s.symbol] || 999,
+        isGoldenStar: goldenStarMap[s.symbol] || false
       };
     });
-  }, [symbols, stocksByTimeframe, symbolRanks]);
+  }, [symbols, stocksByTimeframe, symbolRanks, goldenStarMap]);
 
   const filteredStocks = useMemo(() => {
     const list = rankedStocks.filter(s => {
@@ -461,7 +487,8 @@ export default function App() {
       const matchesM = mSignalFilter.length === 0 || mSignalFilter.includes(stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral Zone');
 
       const matchesSector = sectorFilters.length === 0 || sectorFilters.includes(s.sector);
-      return matchesSearch && matchesH && matchesHr && matchesD && matchesW && matchesM && matchesSector;
+      const matchesStar = !showGoldenStarsOnly || s.isGoldenStar;
+      return matchesSearch && matchesH && matchesHr && matchesD && matchesW && matchesM && matchesSector && matchesStar;
     });
 
     return [...list].sort((a, b) => {
@@ -481,7 +508,7 @@ export default function App() {
       }
       return 0;
     });
-  }, [rankedStocks, search, sortBy, sortOrder, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe]);
+  }, [rankedStocks, search, sortBy, sortOrder, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe, showGoldenStarsOnly]);
 
   const [visibleCount, setVisibleCount] = useState(50);
   const observerRef = useRef<HTMLDivElement>(null);
@@ -832,7 +859,21 @@ export default function App() {
                         >
                           #
                         </span>
-                        <div className="flex-1 flex justify-center">
+                        <div className="flex-1 flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setShowGoldenStarsOnly(prev => !prev); }}
+                            className={`relative group/star transition-all duration-200 active:scale-90 ${
+                              showGoldenStarsOnly
+                                ? 'text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.6)]'
+                                : (isDarkMode ? 'text-slate-600 hover:text-amber-400/70' : 'text-slate-300 hover:text-amber-500/70')
+                            }`}
+                            title={showGoldenStarsOnly ? 'Show All Assets' : `Filter: Golden Stars Only (${goldenStarCount})`}
+                          >
+                            <Star className={`w-3 h-3 md:w-3.5 md:h-3.5 transition-all ${showGoldenStarsOnly ? 'fill-amber-400' : ''}`} />
+                            {showGoldenStarsOnly && goldenStarCount > 0 && (
+                              <span className="absolute -top-1.5 -right-2 text-[7px] font-black text-amber-400 tabular-nums">{goldenStarCount}</span>
+                            )}
+                          </button>
                           <span 
                             onClick={() => handleSort('change')}
                             className={`text-[9px] md:text-[10px] font-bold uppercase tracking-tighter cursor-pointer transition-colors duration-150 ${
@@ -919,7 +960,16 @@ export default function App() {
                         <div className="flex items-center gap-1 md:gap-3">
                           <span className={`text-[9px] md:text-[10px] font-black w-4 md:w-8 text-right pr-1 md:pr-2 border-r shrink-0 ${isDarkMode ? 'text-slate-600 border-white/10' : 'text-slate-500 border-slate-200/60'}`}>{stock.mcRank}</span>
                           <div className="flex-1 flex flex-col items-center">
-                            <div className="relative inline-flex items-center justify-center">
+                            <div className="relative inline-flex items-center justify-center gap-1">
+                              {stock.isGoldenStar && (
+                                <span className="relative group/startip" title="Prime Entry: Macro Uptrend with Deep Structural Pullback">
+                                  <Star className="w-3 h-3 md:w-3.5 md:h-3.5 text-amber-400 fill-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)] animate-[pulse_3s_ease-in-out_infinite]" />
+                                  <span className={`pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 rounded-lg text-[8px] font-bold uppercase tracking-wider whitespace-nowrap opacity-0 group-hover/startip:opacity-100 transition-opacity duration-200 z-50 ${isDarkMode ? 'bg-slate-800 text-amber-300 border border-amber-500/30 shadow-lg shadow-amber-500/10' : 'bg-white text-amber-700 border border-amber-200 shadow-lg'}`}>
+                                    Prime Entry: Macro Uptrend + Deep Pullback
+                                    <span className={`absolute top-full left-1/2 -translate-x-1/2 -mt-px w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent ${isDarkMode ? 'border-t-slate-800' : 'border-t-white'}`} />
+                                  </span>
+                                </span>
+                              )}
                               <a
                                 href="#"
                                 onClick={(e) => { e.preventDefault(); handleChartRedirect(stock.symbol); }}
@@ -1026,7 +1076,12 @@ export default function App() {
 
                   <div className="flex justify-between items-start mb-5 relative z-10">
                     <div className="text-left">
-                      <div className="flex items-baseline gap-2">
+                      <div className="flex items-center gap-2">
+                        {stock.isGoldenStar && (
+                          <span title="Prime Entry: Macro Uptrend with Deep Structural Pullback">
+                            <Star className="w-4 h-4 text-amber-400 fill-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.5)] animate-[pulse_3s_ease-in-out_infinite] shrink-0" />
+                          </span>
+                        )}
                         <h3 className={`font-mono text-xl font-black group-hover:text-indigo-500 transition-colors leading-none tracking-tighter ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{stock.symbol}</h3>
                         <span className="text-[10px] font-black opacity-20">#{stock.mcRank}</span>
                       </div>
