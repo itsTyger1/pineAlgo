@@ -153,6 +153,7 @@ export default function App() {
   const [showSectorDropdown, setShowSectorDropdown] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showGoldenStarsOnly, setShowGoldenStarsOnly] = useState(false);
+  const [showPullbacksOnly, setShowPullbacksOnly] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     try {
@@ -450,6 +451,29 @@ export default function App() {
     return Object.values(goldenStarMap).filter(Boolean).length;
   }, [goldenStarMap]);
 
+  // Uptrend Pullback algorithm: identifies assets in macro uptrend experiencing micro pullback/consolidation
+  const uptrendPullbackMap = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    symbols.forEach(s => {
+      const h1Zone = stocksByTimeframe['1h'][s.symbol]?.zone || 'Neutral Zone';
+      const h4Zone = stocksByTimeframe['4hr'][s.symbol]?.zone || 'Neutral Zone';
+      const d1Zone = stocksByTimeframe['1d'][s.symbol]?.zone || 'Neutral Zone';
+      const w1Zone = stocksByTimeframe['1wk'][s.symbol]?.zone || 'Neutral Zone';
+      const m1Zone = stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral Zone';
+
+      const macroUptrend = w1Zone === 'Buy Zone' && m1Zone === 'Buy Zone' && d1Zone === 'Buy Zone';
+      const microSetup = h4Zone === 'Value Zone' || h4Zone === 'Neutral Zone' || h4Zone === 'Buy Zone';
+      const immediateDip = h1Zone === 'Value Zone' || h1Zone === 'Neutral Zone';
+
+      map[s.symbol] = macroUptrend && microSetup && immediateDip;
+    });
+    return map;
+  }, [symbols, stocksByTimeframe]);
+
+  const uptrendPullbackCount = useMemo(() => {
+    return Object.values(uptrendPullbackMap).filter(Boolean).length;
+  }, [uptrendPullbackMap]);
+
   const rankedStocks = useMemo(() => {
     return symbols.map(s => {
       // Find the first available analysis for this symbol to provide metadata
@@ -471,10 +495,11 @@ export default function App() {
         ...analysis,
         name: s.name || analysis.name || s.symbol,
         mcRank: symbolRanks[s.symbol] || 999,
-        isGoldenStar: goldenStarMap[s.symbol] || false
+        isGoldenStar: goldenStarMap[s.symbol] || false,
+        isUptrendPullback: uptrendPullbackMap[s.symbol] || false
       };
     });
-  }, [symbols, stocksByTimeframe, symbolRanks, goldenStarMap]);
+  }, [symbols, stocksByTimeframe, symbolRanks, goldenStarMap, uptrendPullbackMap]);
 
   const filteredStocks = useMemo(() => {
     const list = rankedStocks.filter(s => {
@@ -487,8 +512,18 @@ export default function App() {
       const matchesM = mSignalFilter.length === 0 || mSignalFilter.includes(stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral Zone');
 
       const matchesSector = sectorFilters.length === 0 || sectorFilters.includes(s.sector);
-      const matchesStar = !showGoldenStarsOnly || s.isGoldenStar;
-      return matchesSearch && matchesH && matchesHr && matchesD && matchesW && matchesM && matchesSector && matchesStar;
+      
+      // Filter stacking: logically combine them using OR if both are active, otherwise filter by active one
+      let matchesStarAndPullback = true;
+      if (showGoldenStarsOnly && showPullbacksOnly) {
+        matchesStarAndPullback = s.isGoldenStar || s.isUptrendPullback;
+      } else if (showGoldenStarsOnly) {
+        matchesStarAndPullback = s.isGoldenStar;
+      } else if (showPullbacksOnly) {
+        matchesStarAndPullback = s.isUptrendPullback;
+      }
+
+      return matchesSearch && matchesH && matchesHr && matchesD && matchesW && matchesM && matchesSector && matchesStarAndPullback;
     });
 
     return [...list].sort((a, b) => {
@@ -508,7 +543,7 @@ export default function App() {
       }
       return 0;
     });
-  }, [rankedStocks, search, sortBy, sortOrder, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe, showGoldenStarsOnly]);
+  }, [rankedStocks, search, sortBy, sortOrder, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe, showGoldenStarsOnly, showPullbacksOnly]);
 
   const [visibleCount, setVisibleCount] = useState(50);
   const observerRef = useRef<HTMLDivElement>(null);
@@ -516,7 +551,7 @@ export default function App() {
   // Reset progressive scroll count when search or filters change
   useEffect(() => {
     setVisibleCount(50);
-  }, [search, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, sortBy, sortOrder]);
+  }, [search, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, sortBy, sortOrder, showGoldenStarsOnly, showPullbacksOnly]);
 
   const visibleStocks = useMemo(() => {
     return filteredStocks.slice(0, visibleCount);
@@ -861,6 +896,20 @@ export default function App() {
                         </span>
                         <div className="flex-1 flex items-center justify-center gap-1.5">
                           <button
+                            onClick={(e) => { e.stopPropagation(); setShowPullbacksOnly(prev => !prev); }}
+                            className={`relative group/pullback transition-all duration-200 active:scale-90 w-4.5 h-4.5 md:w-5 md:h-5 rounded-full flex items-center justify-center text-[9px] md:text-[10px] font-black shrink-0 ${
+                              showPullbacksOnly
+                                ? (isDarkMode ? 'bg-teal-500/20 text-teal-400 border border-teal-500/40 shadow-[0_0_8px_rgba(20,184,166,0.5)]' : 'bg-teal-100 text-teal-700 border border-teal-300 shadow-sm')
+                                : (isDarkMode ? 'bg-white/5 border border-white/10 text-slate-500 hover:text-teal-400 hover:border-teal-500/30' : 'bg-slate-100/50 border border-slate-200 text-slate-400 hover:text-teal-700 hover:border-teal-300')
+                            }`}
+                            title={showPullbacksOnly ? 'Show All Assets' : `Filter: Uptrend Pullbacks Only (${uptrendPullbackCount})`}
+                          >
+                            P
+                            {showPullbacksOnly && uptrendPullbackCount > 0 && (
+                              <span className="absolute -top-1.5 -right-2 text-[7px] font-black text-teal-400 tabular-nums">{uptrendPullbackCount}</span>
+                            )}
+                          </button>
+                          <button
                             onClick={(e) => { e.stopPropagation(); setShowGoldenStarsOnly(prev => !prev); }}
                             className={`relative group/star transition-all duration-200 active:scale-90 ${
                               showGoldenStarsOnly
@@ -961,6 +1010,17 @@ export default function App() {
                           <span className={`text-[9px] md:text-[10px] font-black w-4 md:w-8 text-right pr-1 md:pr-2 border-r shrink-0 ${isDarkMode ? 'text-slate-600 border-white/10' : 'text-slate-500 border-slate-200/60'}`}>{stock.mcRank}</span>
                           <div className="flex-1 flex flex-col items-center">
                             <div className="relative inline-flex items-center justify-center gap-1">
+                              {stock.isUptrendPullback && (
+                                <span className="relative group/pullbacktip" title="Uptrend Pullback: Macro Uptrend with Local Dip">
+                                  <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8.5px] font-black shrink-0 ${isDarkMode ? 'bg-teal-500/20 text-teal-400 border border-teal-500/40 shadow-[0_0_8px_rgba(20,184,166,0.35)]' : 'bg-teal-50 text-teal-700 border border-teal-200 shadow-sm'} animate-[pulse_3s_ease-in-out_infinite_1.5s]`}>
+                                    P
+                                  </span>
+                                  <span className={`pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 rounded-lg text-[8px] font-bold uppercase tracking-wider whitespace-nowrap opacity-0 group-hover/pullbacktip:opacity-100 transition-opacity duration-200 z-50 ${isDarkMode ? 'bg-slate-800 text-teal-300 border border-teal-500/30 shadow-lg shadow-teal-500/10' : 'bg-white text-teal-700 border border-teal-200 shadow-lg'}`}>
+                                    Uptrend Pullback: Macro Uptrend + Local Dip
+                                    <span className={`absolute top-full left-1/2 -translate-x-1/2 -mt-px w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent ${isDarkMode ? 'border-t-slate-800' : 'border-t-white'}`} />
+                                  </span>
+                                </span>
+                              )}
                               {stock.isGoldenStar && (
                                 <span className="relative group/startip" title="Prime Entry: Macro Uptrend with Deep Structural Pullback">
                                   <Star className="w-3 h-3 md:w-3.5 md:h-3.5 text-amber-400 fill-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.5)] animate-[pulse_3s_ease-in-out_infinite]" />
@@ -1074,9 +1134,16 @@ export default function App() {
                     <TrendingUp className={`w-16 h-16 ${isDarkMode ? 'text-white' : 'text-slate-200/30'}`} />
                   </div>
 
-                  <div className="flex justify-between items-start mb-5 relative z-10">
+                   <div className="flex justify-between items-start mb-5 relative z-10">
                     <div className="text-left">
                       <div className="flex items-center gap-2">
+                        {stock.isUptrendPullback && (
+                          <span title="Uptrend Pullback: Macro Uptrend with Local Dip">
+                            <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9.5px] font-black shrink-0 ${isDarkMode ? 'bg-teal-500/20 text-teal-400 border border-teal-500/40 shadow-[0_0_8px_rgba(20,184,166,0.35)]' : 'bg-teal-50 text-teal-700 border border-teal-200 shadow-sm'} animate-[pulse_3s_ease-in-out_infinite_1.5s]`}>
+                              P
+                            </span>
+                          </span>
+                        )}
                         {stock.isGoldenStar && (
                           <span title="Prime Entry: Macro Uptrend with Deep Structural Pullback">
                             <Star className="w-4 h-4 text-amber-400 fill-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.5)] animate-[pulse_3s_ease-in-out_infinite] shrink-0" />
