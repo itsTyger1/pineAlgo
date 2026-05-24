@@ -777,31 +777,31 @@ export default function App() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 md:gap-2 w-full md:w-auto">
             <button
               onClick={() => toggleSignalFilter('1d', 'Buy Zone')}
-              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Buy Zone') ? (isDarkMode ? 'bg-emerald-500/30 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-[0_2px_8px_rgba(16,185,129,0.06)]') : (isDarkMode ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-emerald-50/20 text-emerald-600/80 border-emerald-100/40 hover:bg-emerald-50/50')}`}
+              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Buy Zone') ? (isDarkMode ? 'bg-emerald-500/30 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 'bg-emerald-100 border-emerald-450 text-emerald-955 font-black shadow-[0_2px_8px_rgba(16,185,129,0.12)]') : (isDarkMode ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-white border-slate-300 text-emerald-800 hover:bg-emerald-50/50 shadow-sm')}`}
             >
-              <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>{stats.buyCount}</span>
-              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-emerald-400/60' : 'text-emerald-600/50'}`}>Buy Zones</span>
+              <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-emerald-400' : (dSignalFilter.includes('Buy Zone') ? 'text-emerald-950' : 'text-emerald-850')}`}>{stats.buyCount}</span>
+              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-emerald-400/60' : (dSignalFilter.includes('Buy Zone') ? 'text-emerald-800' : 'text-emerald-600')}`}>Buy Zones</span>
             </button>
             <button
               onClick={() => toggleSignalFilter('1d', 'Value Zone')}
-              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Value Zone') ? (isDarkMode ? 'bg-amber-500/30 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-amber-50 border-amber-200 text-amber-700 shadow-[0_2px_8px_rgba(245,158,11,0.06)]') : (isDarkMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50/20 text-amber-600/80 border-amber-100/40 hover:bg-amber-50/50')}`}
+              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Value Zone') ? (isDarkMode ? 'bg-amber-500/30 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-amber-100 border-amber-450 text-amber-955 font-black shadow-[0_2px_8px_rgba(245,158,11,0.12)]') : (isDarkMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-white border-slate-300 text-amber-800 hover:bg-amber-50/50 shadow-sm')}`}
             >
-              <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-amber-400' : 'text-amber-700'}`}>{stats.valueCount}</span>
-              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-amber-400/60' : 'text-amber-600/50'}`}>Value Zones</span>
+              <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-amber-400' : (dSignalFilter.includes('Value Zone') ? 'text-amber-950' : 'text-amber-900')}`}>{stats.valueCount}</span>
+              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-amber-400/60' : (dSignalFilter.includes('Value Zone') ? 'text-amber-800' : 'text-amber-700')}`}>Value Zones</span>
             </button>
             <button
               onClick={() => toggleSignalFilter('1d', 'Sell Zone')}
-              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Sell Zone') ? (isDarkMode ? 'bg-rose-500/30 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : 'bg-rose-50 border-rose-200 text-rose-700 shadow-[0_2px_8px_rgba(244,63,94,0.06)]') : (isDarkMode ? 'bg-rose-500/10 border-rose-500/20' : 'bg-rose-50/20 text-rose-600/80 border-rose-100/40 hover:bg-rose-50/50')}`}
+              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Sell Zone') ? (isDarkMode ? 'bg-rose-500/30 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.2)]' : 'bg-rose-100 border-rose-450 text-rose-955 font-black shadow-[0_2px_8px_rgba(244,63,94,0.12)]') : (isDarkMode ? 'bg-rose-500/10 border-rose-500/20' : 'bg-white border-slate-300 text-rose-800 hover:bg-rose-50/50 shadow-sm')}`}
             >
-              <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-rose-400' : 'text-rose-700'}`}>{stats.sellCount}</span>
-              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-rose-400/60' : 'text-rose-600/50'}`}>Sell Zones</span>
+              <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-rose-400' : (dSignalFilter.includes('Sell Zone') ? 'text-rose-950' : 'text-rose-900')}`}>{stats.sellCount}</span>
+              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-rose-400/60' : (dSignalFilter.includes('Sell Zone') ? 'text-rose-800' : 'text-rose-700')}`}>Sell Zones</span>
             </button>
             <button
               onClick={() => toggleSignalFilter('1d', 'Neutral Zone')}
-              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Neutral Zone') ? (isDarkMode ? 'bg-white/20 border-white/40' : 'bg-slate-200 border-slate-300 text-slate-700') : (isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50/50 border-slate-200/35 text-slate-500 hover:bg-slate-100/50')}`}
+              className={`flex flex-col px-2 py-1.5 md:px-3 md:py-2 border rounded-lg md:rounded-xl cursor-pointer transition-all hover:scale-[1.02] active:scale-95 ${dSignalFilter.includes('Neutral Zone') ? (isDarkMode ? 'bg-white/20 border-white/40' : 'bg-slate-200 border-slate-400 text-slate-950 font-black shadow-[0_2px_8px_rgba(148,163,184,0.12)]') : (isDarkMode ? 'bg-white/5 border-white/10' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-sm')}`}
             >
-              <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{stats.neutralCount}</span>
-              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-600'}`}>Neutral Zone</span>
+              <span className={`text-xs font-black leading-none ${isDarkMode ? 'text-slate-300' : (dSignalFilter.includes('Neutral Zone') ? 'text-slate-900' : 'text-slate-700')}`}>{stats.neutralCount}</span>
+              <span className={`text-[7.5px] md:text-[8px] uppercase font-bold tracking-wider mt-1 ${isDarkMode ? 'text-slate-500' : (dSignalFilter.includes('Neutral Zone') ? 'text-slate-800' : 'text-slate-500')}`}>Neutral Zone</span>
             </button>
           </div>
         </div>
@@ -894,7 +894,7 @@ export default function App() {
                         >
                           #
                         </span>
-                        <div className="flex-1 flex items-center justify-center gap-1.5">
+                        <div className="flex-1 flex items-center justify-start pl-2 md:justify-center md:pl-0 gap-1.5">
                           <button
                             onClick={(e) => { e.stopPropagation(); setShowPullbacksOnly(prev => !prev); }}
                             className={`relative group/pullback transition-all duration-200 active:scale-90 w-4.5 h-4.5 md:w-5 md:h-5 rounded-full flex items-center justify-center text-[9px] md:text-[10px] font-black shrink-0 ${
@@ -1008,8 +1008,8 @@ export default function App() {
                       >
                         <div className="flex items-center gap-1 md:gap-3">
                           <span className={`text-[9px] md:text-[10px] font-black w-4 md:w-8 text-right pr-1 md:pr-2 border-r shrink-0 ${isDarkMode ? 'text-slate-600 border-white/10' : 'text-slate-500 border-slate-200/60'}`}>{stock.mcRank}</span>
-                          <div className="flex-1 flex flex-col items-center">
-                            <div className="relative inline-flex items-center justify-center gap-1">
+                          <div className="flex-1 flex flex-col items-start pl-1.5 md:items-center md:pl-0">
+                            <div className="relative inline-flex items-center justify-start md:justify-center gap-1">
                               {stock.isUptrendPullback && (
                                 <span className="relative group/pullbacktip" title="Uptrend Pullback: Macro Uptrend with Local Dip">
                                   <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8.5px] font-black shrink-0 ${isDarkMode ? 'bg-teal-500/20 text-teal-400 border border-teal-500/40 shadow-[0_0_8px_rgba(20,184,166,0.35)]' : 'bg-teal-50 text-teal-700 border border-teal-200 shadow-sm'} animate-[pulse_3s_ease-in-out_infinite_1.5s]`}>
@@ -1049,7 +1049,7 @@ export default function App() {
                                 </span>
                               )}
                             </div>
-                            <span className={`text-[8px] md:text-[9px] ${isDarkMode ? 'text-indigo-400/60' : 'text-indigo-600/80'} font-bold uppercase truncate max-w-[60px] md:max-w-none mt-1 sector-label`}>{stock.sector}</span>
+                            <span className={`text-[8px] md:text-[9px] ${isDarkMode ? 'text-indigo-400/60' : 'text-indigo-600/80'} font-bold uppercase truncate max-w-[60px] md:max-w-none mt-1 sector-label text-left md:text-center`}>{stock.sector}</span>
                           </div>
                         </div>
                       </td>
