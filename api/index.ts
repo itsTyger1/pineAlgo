@@ -74,7 +74,7 @@ class RequestQueue {
 
     // Execute with timeout logic
     const execute = async () => {
-      const timeoutPromise = new Promise((_, r) => 
+      const timeoutPromise = new Promise((_, r) =>
         setTimeout(() => r(new Error('Yahoo Finance Request Timeout')), timeout)
       );
 
@@ -181,8 +181,8 @@ app.get("/api/stocks", async (req, res) => {
     const fetchStocksTask = async () => {
       // Fetch from multiple categories to get a broader list targeting top market caps
       const screeners = [
-        "most_actives", 
-        "undervalued_large_caps", 
+        "most_actives",
+        "undervalued_large_caps",
         "growth_technology_stocks",
         "undervalued_growth_stocks",
         "day_gainers",
@@ -200,7 +200,7 @@ app.get("/api/stocks", async (req, res) => {
           allQuotes.push(...(r.value as any).quotes);
         }
       });
-      
+
       // Try for core quotes too
       try {
         const coreQuotes = await fetchQuoteWithRetry(CORE_SYMBOLS);
@@ -247,7 +247,7 @@ app.get("/api/stocks", async (req, res) => {
     // Vercel serverless has 60s limit with our new config, we time out after 28 seconds to avoid 504 proxy timeout
     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 28000));
     const stockList = await Promise.race([fetchStocksTask(), timeoutPromise]);
-    
+
     return res.json(stockList);
 
   } catch (error: any) {
@@ -275,7 +275,7 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
 
   const promises = chunks.map(async (chunk) => {
     let results = await fetchSingleQuoteWithRetry(chunk);
-    
+
     // Fallback: If a small batch fails, try individual requests for each symbol in that batch
     if (!results && chunk.length > 1) {
       console.warn(`Batch failed for subset of ${chunk.length} symbols, falling back to individual requests`);
@@ -288,7 +288,7 @@ async function fetchQuoteWithRetry(symbols: string | string[]) {
 
   const settledResults = await Promise.allSettled(promises);
   const allResults: any[] = [];
-  
+
   for (const r of settledResults) {
     if (r.status === 'fulfilled' && r.value) {
       const results = r.value;
@@ -333,7 +333,11 @@ async function fetchSingleQuoteWithRetry(symbols: string | string[]) {
 async function getAnalysis(symbol: string, timeframe: string, bypassCache = false) {
   const cacheKey = `${symbol}_${timeframe}`;
   if (!bypassCache && cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp) < CACHE_TTL) {
-    return cache[cacheKey].data;
+    const cachedData = cache[cacheKey].data;
+    if (cachedData.sector === 'Other' && summaryCache[symbol]?.data?.assetProfile?.sector) {
+      cachedData.sector = summaryCache[symbol].data.assetProfile.sector;
+    }
+    return cachedData;
   }
 
   const endDate = new Date();
@@ -388,7 +392,7 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
   let chartResult: any;
   let chartRetryCount = 0;
   const maxChartRetries = 2; // Fail fast to avoid blocking batches
-  
+
   while (chartRetryCount <= maxChartRetries) {
     try {
       chartResult = await yfQueue.add(() => yahooFinance.chart(symbol, queryOptions, { validateResult: false }), 12000);
@@ -441,15 +445,94 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
 
   let sector = 'Other';
   const summary = summaryCache[symbol]?.data;
-  
+
   // Fallback map for popular stocks if YF rate limits us on AWS/Vercel
   const SECTOR_MAP: Record<string, string> = {
-    "AAPL": "Technology", "MSFT": "Technology", "GOOGL": "Communication", "AMZN": "Consumer", "NVDA": "Technology", "META": "Communication", "TSLA": "Consumer", "AVGO": "Technology", "ORCL": "Technology", "ADBE": "Technology",
-    "PLTR": "Technology", "SMCI": "Technology", "AMD": "Technology", "TSM": "Technology", "TXN": "Technology", "INTC": "Technology", "QCOM": "Technology", "MU": "Technology",
+    // Technology
+    "AAPL": "Technology", "MSFT": "Technology", "NVDA": "Technology", "AVGO": "Technology",
+    "ORCL": "Technology", "ADBE": "Technology", "CRM": "Technology", "CSCO": "Technology",
+    "IBM": "Technology", "NOW": "Technology", "INTU": "Technology", "PANW": "Technology",
+    "ANET": "Technology", "LRCX": "Technology", "KLAC": "Technology", "SNPS": "Technology",
+    "CDNS": "Technology", "ASML": "Technology", "TEAM": "Technology", "WDAY": "Technology",
+    "CRWD": "Technology", "DDOG": "Technology", "PLTR": "Technology", "SMCI": "Technology",
+    "AMD": "Technology", "TSM": "Technology", "TXN": "Technology", "INTC": "Technology",
+    "QCOM": "Technology", "MU": "Technology", "FSLR": "Technology", "ENPH": "Technology",
+    "SEDG": "Technology", "ARM": "Technology", "SNOW": "Technology", "MDB": "Technology",
+    "NET": "Technology", "ANSS": "Technology", "HPQ": "Technology", "HPE": "Technology",
+    "NTAP": "Technology", "WDC": "Technology", "STX": "Technology", "FITB": "Financials",
+
+    // Communication Services
+    "GOOG": "Communication", "GOOGL": "Communication", "META": "Communication", "NFLX": "Communication",
+    "DIS": "Communication", "TMUS": "Communication", "VZ": "Communication", "T": "Communication",
+    "CMCSA": "Communication", "CHTR": "Communication", "EA": "Communication", "TTWO": "Communication",
+    "MTCH": "Communication", "SNAP": "Communication", "PINS": "Communication", "LYV": "Communication",
+    "OMC": "Communication", "IPG": "Communication", "WBD": "Communication",
+
+    // Consumer Discretionary & Staples
+    "AMZN": "Consumer", "TSLA": "Consumer", "WMT": "Consumer", "COST": "Consumer",
+    "HD": "Consumer", "MCD": "Consumer", "KO": "Consumer", "PEP": "Consumer",
+    "NKE": "Consumer", "SBUX": "Consumer", "TGT": "Consumer", "TJX": "Consumer",
+    "LOW": "Consumer", "CMG": "Consumer", "BKNG": "Consumer", "EL": "Consumer",
+    "ROST": "Consumer", "DG": "Consumer", "DLTR": "Consumer", "Target": "Consumer",
+    "MAR": "Consumer", "HLT": "Consumer", "LVS": "Consumer", "MGM": "Consumer",
+    "CCL": "Consumer", "RCL": "Consumer", "NCLH": "Consumer", "MELI": "Consumer",
+    "SE": "Consumer", "SG": "Consumer", "YUM": "Consumer", "DPZ": "Consumer",
+    "OR.PA": "Consumer", "LVMUY": "Consumer", "MO": "Consumer", "PM": "Consumer",
+    "PG": "Consumer", "CL": "Consumer", "KDP": "Consumer", "MDLZ": "Consumer",
+    "GIS": "Consumer", "K": "Consumer", "KHC": "Consumer", "SYY": "Consumer",
+    "ADM": "Consumer", "KR": "Consumer", "TSG": "Consumer",
+
+    // Financials
+    "JPM": "Financials", "BAC": "Financials", "WFC": "Financials", "C": "Financials",
+    "GS": "Financials", "MS": "Financials", "AXP": "Financials", "BLK": "Financials",
+    "SCHW": "Financials", "MMC": "Financials", "PGR": "Financials", "CB": "Financials",
+    "V": "Financials", "MA": "Financials", "COIN": "Financials", "HOOD": "Financials",
+    "PYPL": "Financials", "SQ": "Financials", "SOFI": "Financials", "AFRM": "Financials",
+    "UPST": "Financials", "NU": "Financials", "AON": "Financials", "MET": "Financials",
+    "PRU": "Financials", "TRV": "Financials", "ALL": "Financials", "CME": "Financials",
+    "ICE": "Financials", "SPGI": "Financials", "MCO": "Financials", "DFS": "Financials",
+    "SYF": "Financials", "KEY": "Financials", "HBAN": "Financials", "RF": "Financials",
+
+    // Healthcare
+    "JNJ": "Healthcare", "UNH": "Healthcare", "PFE": "Healthcare", "LLY": "Healthcare",
+    "ABBV": "Healthcare", "MRK": "Healthcare", "TMO": "Healthcare", "ABT": "Healthcare",
+    "DHR": "Healthcare", "ISRG": "Healthcare", "SYK": "Healthcare", "VRTX": "Healthcare",
+    "BSX": "Healthcare", "CI": "Healthcare", "CVS": "Healthcare", "ELV": "Healthcare",
+    "BDX": "Healthcare", "MCK": "Healthcare", "COR": "Healthcare", "CNC": "Healthcare",
+    "REGN": "Healthcare", "ZTS": "Healthcare", "ILMN": "Healthcare", "EW": "Healthcare",
+    "ALGN": "Healthcare", "BIIB": "Healthcare", "MRNA": "Healthcare", "IDXX": "Healthcare",
+    "GILD": "Healthcare", "BMRN": "Healthcare", "INCY": "Healthcare", "EXAS": "Healthcare",
+    "AMGN": "Healthcare", "HCA": "Healthcare", "IQV": "Healthcare", "MDT": "Healthcare",
+    "AZN": "Healthcare", "NVO": "Healthcare", "NVS": "Healthcare", "SNY": "Healthcare",
+
+    // Energy
     "XOM": "Energy", "CVX": "Energy", "COP": "Energy", "OXY": "Energy",
-    "JPM": "Financials", "BAC": "Financials", "WFC": "Financials", "GS": "Financials", "V": "Financials", "MA": "Financials",
-    "JNJ": "Healthcare", "UNH": "Healthcare", "PFE": "Healthcare", "LLY": "Healthcare", "ABBV": "Healthcare", "MRK": "Healthcare",
-    "WMT": "Consumer", "COST": "Consumer", "HD": "Consumer", "MCD": "Consumer"
+    "SLB": "Energy", "HAL": "Energy", "BKR": "Energy", "EOG": "Energy",
+    "MPC": "Energy", "PSX": "Energy", "VLO": "Energy", "HES": "Energy",
+    "DVN": "Energy", "LNG": "Energy", "WMB": "Energy", "KMI": "Energy",
+    "PXD": "Energy", "FANG": "Energy", "MRO": "Energy", "APA": "Energy",
+
+    // Industrials
+    "GE": "Industrials", "CAT": "Industrials", "UNP": "Industrials", "HON": "Industrials",
+    "RTX": "Industrials", "LMT": "Industrials", "UPS": "Industrials", "FDX": "Industrials",
+    "DE": "Industrials", "ETN": "Industrials", "EMR": "Industrials", "WM": "Industrials",
+    "NSC": "Industrials", "CSX": "Industrials", "ADP": "Industrials", "ITW": "Industrials",
+    "GD": "Industrials", "NOC": "Industrials", "TDG": "Industrials", "BA": "Industrials",
+    "MMM": "Industrials", "FTV": "Industrials", "IR": "Industrials", "AME": "Industrials",
+    "PH": "Industrials", "ROP": "Industrials", "FAST": "Industrials", "VRSK": "Industrials",
+
+    // Materials
+    "LIN": "Materials", "APD": "Materials", "SHW": "Materials", "FCX": "Materials",
+    "NUE": "Materials", "DOW": "Materials", "DD": "Materials", "ALB": "Materials",
+    "NEM": "Materials", "VALE": "Materials", "SCCO": "Materials", "CLF": "Materials",
+    "X": "Materials", "STLD": "Materials", "RS": "Materials", "LTHM": "Materials",
+    "LAC": "Materials", "SQM": "Materials",
+
+    // Utilities & Real Estate
+    "NEE": "Utilities", "SO": "Utilities", "DUK": "Utilities", "AEP": "Utilities",
+    "D": "Utilities", "EXC": "Utilities", "SRE": "Utilities", "CEG": "Utilities",
+    "VST": "Utilities", "PLD": "Real Estate", "AMT": "Real Estate", "CCI": "Real Estate",
+    "EQIX": "Real Estate", "WY": "Real Estate", "SMR": "Utilities", "CCJ": "Energy"
   };
 
   if (summary?.assetProfile?.sector) {
@@ -484,7 +567,7 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
   // Optimize MA calculation
   let maFast: number | null = 0;
   let maSlow: number | null = 0;
-  
+
   if (timeframe === '1d' && quote?.fiftyDayAverage && quote?.twoHundredDayAverage) {
     maFast = quote.fiftyDayAverage;
     maSlow = quote.twoHundredDayAverage;
@@ -492,7 +575,7 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     maFast = calculateSMA(prices, 50) || 0;
     maSlow = calculateSMA(prices, 200) || 0;
   }
-  
+
   const rsi = calculateRSI(prices, 21) || 50;
 
   const isMacroUptrend = maFast !== null && maSlow !== null && (maFast > maSlow);
@@ -526,7 +609,7 @@ app.get("/api/analysis/:symbol", async (req, res) => {
   const { symbol } = req.params;
   const timeframe = (req.query.timeframe as string) || '1d';
   const refresh = req.query.refresh === 'true';
-  
+
   try {
     const data = await getAnalysis(symbol, timeframe, refresh);
     res.json(data);
@@ -562,10 +645,10 @@ app.post("/api/analysis/batch", async (req, res) => {
 
       // 2. Fire off summary fetches in background (don't block analysis)
       const missingSummaries = symbols.filter(s => !summaryCache[s] || (Date.now() - summaryCache[s].timestamp) > SUMMARY_CACHE_TTL);
-      missingSummaries.slice(0, 10).forEach(sym => 
+      missingSummaries.slice(0, 10).forEach(sym =>
         yfQueue.add(() => yahooFinance.quoteSummary(sym, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
           if (res) summaryCache[sym] = { data: res, timestamp: Date.now() };
-        }).catch(() => null), 3000)
+        }).catch(() => null), 20000)
       );
 
       // 3. Run all analyses in parallel (don't wait for summaries)
@@ -582,7 +665,7 @@ app.post("/api/analysis/batch", async (req, res) => {
     };
 
     const timeoutLimit = new Promise<any[]>((_, r) => setTimeout(() => r([]), 28000));
-    
+
     // We race the batch task against a 28 second timeout to avoid proxy 504 timeouts
     const results = await Promise.race([fetchBatchTask(), timeoutLimit]);
     res.json(results);

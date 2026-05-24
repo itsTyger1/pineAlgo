@@ -63,9 +63,9 @@ const SearchInput = memo(({ search, onSearchChange, isDarkMode }: SearchInputPro
   }, [localValue, onSearchChange]);
 
   return (
-    <input 
-      type="text" 
-      placeholder="Search Stocks..." 
+    <input
+      type="text"
+      placeholder="Search Stocks..."
       value={localValue}
       onChange={(e) => setLocalValue(e.target.value)}
       className={`w-full border rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:border-indigo-500/50 transition-all duration-150 ${isDarkMode ? 'bg-white/5 border-white/10 text-white focus:bg-white/10 placeholder:text-slate-600' : 'bg-slate-50/80 border-slate-200/50 text-slate-700 focus:bg-white focus:border-indigo-500/30 focus:shadow-[0_0_12px_rgba(99,102,241,0.05)] placeholder:text-slate-400'}`}
@@ -512,7 +512,7 @@ export default function App() {
       const matchesM = mSignalFilter.length === 0 || mSignalFilter.includes(stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral Zone');
 
       const matchesSector = sectorFilters.length === 0 || sectorFilters.includes(s.sector);
-      
+
       // Filter stacking: logically combine them using OR if both are active, otherwise filter by active one
       let matchesStarAndPullback = true;
       if (showGoldenStarsOnly && showPullbacksOnly) {
@@ -594,7 +594,9 @@ export default function App() {
 
   const stats = useMemo(() => {
     const list = Object.values(stocks) as StockAnalysis[];
-    const sectors = Array.from(new Set(list.map(s => s.sector))).filter(Boolean).sort();
+    const sectors = Array.from(new Set(list.map(s => s.sector)))
+      .filter(s => s && s !== 'Other' && s !== 'Unknown')
+      .sort();
     return {
       buyCount: list.filter(s => s.zone === 'Buy Zone').length,
       valueCount: list.filter(s => s.zone === 'Value Zone').length,
@@ -659,7 +661,7 @@ export default function App() {
 
         <div className={`flex-1 max-w-md mx-2 md:mx-8 relative group transition-all duration-300 ${isSearchOpen ? 'translate-y-0 opacity-100' : 'hidden lg:block'}`}>
           <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 group-focus-within:text-indigo-400 transition-colors ${isDarkMode ? 'text-slate-500' : 'text-slate-400/80'}`} />
-          <SearchInput 
+          <SearchInput
             search={search}
             onSearchChange={setSearch}
             isDarkMode={isDarkMode}
@@ -683,10 +685,10 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => fetchStocks(true)}
+            onClick={() => window.location.reload()}
             className={`p-2 rounded-full transition-all active:scale-95 disabled:opacity-50 interactive-target ${isDarkMode ? 'hover:bg-white/10 text-slate-400 hover:text-white' : 'hover:bg-slate-100/50 text-slate-400 hover:text-slate-700'}`}
             disabled={loading}
-            title="Force Sync"
+            title="Resync"
           >
             <RefreshCcw className={`w-4 h-4 md:w-5 md:h-5 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -704,8 +706,8 @@ export default function App() {
               </div>
 
               <div className={`w-full h-1.5 md:h-2 rounded-full overflow-hidden border relative ${isDarkMode
-                  ? 'bg-slate-900 border-white/10 shadow-[inset_0_0_6px_rgba(0,0,0,0.6)]'
-                  : 'bg-slate-100/80 border-slate-200/35 shadow-[inset_0_0_4px_rgba(0,0,0,0.02)]'
+                ? 'bg-slate-900 border-white/10 shadow-[inset_0_0_6px_rgba(0,0,0,0.6)]'
+                : 'bg-slate-100/80 border-slate-200/35 shadow-[inset_0_0_4px_rgba(0,0,0,0.02)]'
                 } ${displayedAnalyzedCount < (symbols.length || 500) && (symbols.length > 0)
                   ? (isDarkMode ? 'shadow-[inset_0_0_8px_rgba(99,102,241,0.35)]' : 'shadow-[inset_0_0_6px_rgba(99,102,241,0.04)]')
                   : ''
@@ -715,8 +717,8 @@ export default function App() {
                   animate={{ width: `${(displayedAnalyzedCount / (symbols.length || 1)) * 100}%` }}
                   transition={{ type: "tween", ease: "easeOut", duration: 0.15 }}
                   className={`h-full ${displayedAnalyzedCount >= (symbols.length || 500) && (symbols.length > 0)
-                      ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.7)]'
-                      : 'bg-indigo-500 shadow-[0_0_12px_rgba(99,102,241,0.7),inset_0_0_4px_rgba(255,255,255,0.3)] animate-pulse'
+                    ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.7)]'
+                    : 'bg-indigo-500 shadow-[0_0_12px_rgba(99,102,241,0.7),inset_0_0_4px_rgba(255,255,255,0.3)] animate-pulse'
                     }`}
                 />
               </div>
@@ -841,8 +843,8 @@ export default function App() {
                       key={sector}
                       onClick={() => toggleSectorFilter(sector)}
                       className={`w-full text-left px-3 py-2 rounded-lg text-[10px] font-bold uppercase transition-all flex items-center justify-between mb-1 ${sectorFilters.includes(sector)
-                          ? (isDarkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-50/70 text-indigo-600')
-                          : (isDarkMode ? 'text-slate-400 hover:bg-white/5' : 'text-slate-700 hover:bg-slate-50/80')
+                        ? (isDarkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-50/70 text-indigo-600')
+                        : (isDarkMode ? 'text-slate-400 hover:bg-white/5' : 'text-slate-700 hover:bg-slate-50/80')
                         }`}
                     >
                       <span className="truncate">{sector}</span>
@@ -883,13 +885,12 @@ export default function App() {
                       style={{ transform: 'translate3d(0, 0, 0)', backfaceVisibility: 'hidden', willChange: 'transform' }}
                     >
                       <div className="flex items-center gap-1 md:gap-3">
-                        <span 
+                        <span
                           onClick={() => handleSort('marketCap')}
-                          className={`w-4 md:w-8 text-right pr-1 md:pr-2 border-r shrink-0 cursor-pointer transition-colors duration-150 ${
-                            sortBy === 'marketCap' 
-                              ? (isDarkMode ? 'text-indigo-400 font-black' : 'text-indigo-600 font-black') 
+                          className={`w-4 md:w-8 text-right pr-1 md:pr-2 border-r shrink-0 cursor-pointer transition-colors duration-150 ${sortBy === 'marketCap'
+                              ? (isDarkMode ? 'text-indigo-400 font-black' : 'text-indigo-600 font-black')
                               : (isDarkMode ? 'border-white/10 text-slate-400 hover:text-white' : 'border-slate-200/60 text-slate-500 hover:text-indigo-600')
-                          }`}
+                            }`}
                           title="Sort by Rank / Market Cap"
                         >
                           #
@@ -897,11 +898,10 @@ export default function App() {
                         <div className="flex-1 flex items-center justify-start pl-2 md:justify-center md:pl-0 gap-1.5">
                           <button
                             onClick={(e) => { e.stopPropagation(); setShowPullbacksOnly(prev => !prev); }}
-                            className={`relative group/pullback transition-all duration-200 active:scale-90 w-4.5 h-4.5 md:w-5 md:h-5 rounded-full flex items-center justify-center text-[9px] md:text-[10px] font-black shrink-0 ${
-                              showPullbacksOnly
+                            className={`relative group/pullback transition-all duration-200 active:scale-90 w-4.5 h-4.5 md:w-5 md:h-5 rounded-full flex items-center justify-center text-[9px] md:text-[10px] font-black shrink-0 ${showPullbacksOnly
                                 ? (isDarkMode ? 'bg-teal-500/20 text-teal-400 border border-teal-500/40 shadow-[0_0_8px_rgba(20,184,166,0.5)]' : 'bg-teal-100 text-teal-700 border border-teal-300 shadow-sm')
                                 : (isDarkMode ? 'bg-white/5 border border-white/10 text-slate-500 hover:text-teal-400 hover:border-teal-500/30' : 'bg-slate-100/50 border border-slate-200 text-slate-400 hover:text-teal-700 hover:border-teal-300')
-                            }`}
+                              }`}
                             title={showPullbacksOnly ? 'Show All Assets' : `Filter: Uptrend Pullbacks Only (${uptrendPullbackCount})`}
                           >
                             P
@@ -911,11 +911,10 @@ export default function App() {
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); setShowGoldenStarsOnly(prev => !prev); }}
-                            className={`relative group/star transition-all duration-200 active:scale-90 ${
-                              showGoldenStarsOnly
+                            className={`relative group/star transition-all duration-200 active:scale-90 ${showGoldenStarsOnly
                                 ? 'text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.6)]'
                                 : (isDarkMode ? 'text-slate-600 hover:text-amber-400/70' : 'text-slate-300 hover:text-amber-500/70')
-                            }`}
+                              }`}
                             title={showGoldenStarsOnly ? 'Show All Assets' : `Filter: Golden Stars Only (${goldenStarCount})`}
                           >
                             <Star className={`w-3 h-3 md:w-3.5 md:h-3.5 transition-all ${showGoldenStarsOnly ? 'fill-amber-400' : ''}`} />
@@ -923,13 +922,12 @@ export default function App() {
                               <span className="absolute -top-1.5 -right-2 text-[7px] font-black text-amber-400 tabular-nums">{goldenStarCount}</span>
                             )}
                           </button>
-                          <span 
+                          <span
                             onClick={() => handleSort('change')}
-                            className={`text-[9px] md:text-[10px] font-bold uppercase tracking-tighter cursor-pointer transition-colors duration-150 ${
-                              sortBy === 'change'
+                            className={`text-[9px] md:text-[10px] font-bold uppercase tracking-tighter cursor-pointer transition-colors duration-150 ${sortBy === 'change'
                                 ? (isDarkMode ? 'text-indigo-400 font-black' : 'text-indigo-600 font-black')
                                 : (isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-700 hover:text-indigo-600')
-                            }`}
+                              }`}
                             title="Sort by % Change"
                           >
                             Asset
@@ -971,8 +969,8 @@ export default function App() {
                                     toggleSignalFilter(tf as any, option);
                                   }}
                                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-[9px] font-bold uppercase transition-all ${(tf === '1h' ? hSignalFilter : tf === '4hr' ? hrSignalFilter : tf === '1d' ? dSignalFilter : tf === '1wk' ? wSignalFilter : mSignalFilter).includes(option)
-                                      ? (isDarkMode ? 'bg-indigo-50/20 text-indigo-400' : 'bg-indigo-50/70 text-indigo-600')
-                                      : (isDarkMode ? 'text-slate-400 hover:bg-white/5' : 'text-slate-500 hover:bg-slate-50')
+                                    ? (isDarkMode ? 'bg-indigo-50/20 text-indigo-400' : 'bg-indigo-50/70 text-indigo-600')
+                                    : (isDarkMode ? 'text-slate-400 hover:bg-white/5' : 'text-slate-500 hover:bg-slate-50')
                                     }`}
                                 >
                                   <span>{option}</span>
@@ -985,11 +983,10 @@ export default function App() {
                       </th>
                     ))}
                     <th
-                      className={`px-1 md:px-4 py-3 cursor-pointer transition-colors whitespace-nowrap w-[12%] text-center border-b ${
-                        sortBy === 'marketCap'
+                      className={`px-1 md:px-4 py-3 cursor-pointer transition-colors whitespace-nowrap w-[12%] text-center border-b ${sortBy === 'marketCap'
                           ? (isDarkMode ? 'text-indigo-400 font-black' : 'text-indigo-600 font-black')
                           : (isDarkMode ? 'border-b-white/10 hover:text-white' : 'border-b-slate-200/60 text-slate-600 hover:text-indigo-600')
-                      }`}
+                        }`}
                       onClick={() => handleSort('marketCap')}
                     >
                       Cap
@@ -1038,12 +1035,11 @@ export default function App() {
                                 {stock.symbol}
                               </a>
                               {stock.change !== undefined && stock.change !== null && stock.price > 0 && (
-                                <span className={`absolute left-full ml-1.5 whitespace-nowrap text-[7px] md:text-[9px] font-mono font-bold leading-none ${
-                                  stock.change === 0
+                                <span className={`absolute left-full ml-1.5 whitespace-nowrap text-[7px] md:text-[9px] font-mono font-bold leading-none ${stock.change === 0
                                     ? (isDarkMode ? 'text-slate-400' : 'text-slate-500')
                                     : stock.change > 0
-                                    ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')
-                                    : (isDarkMode ? 'text-rose-400' : 'text-rose-600')
+                                      ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')
+                                      : (isDarkMode ? 'text-rose-400' : 'text-rose-600')
                                   }`}>
                                   {stock.change > 0 ? '+' : ''}{stock.change.toFixed(2)}%
                                 </span>
@@ -1054,13 +1050,12 @@ export default function App() {
                         </div>
                       </td>
                       <td className={`px-1 md:px-4 py-3 text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200/60'}`}>
-                        <div className={`text-[10px] md:text-sm font-bold ${
-                          stock.price === 0 || stock.change === 0
+                        <div className={`text-[10px] md:text-sm font-bold ${stock.price === 0 || stock.change === 0
                             ? (isDarkMode ? 'text-white' : 'text-slate-800')
                             : stock.change > 0
-                            ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')
-                            : (isDarkMode ? 'text-rose-400' : 'text-rose-600')
-                        }`}>
+                              ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')
+                              : (isDarkMode ? 'text-rose-400' : 'text-rose-600')
+                          }`}>
                           ${stock.price.toFixed(2)}
                         </div>
                       </td>
@@ -1134,7 +1129,7 @@ export default function App() {
                     <TrendingUp className={`w-16 h-16 ${isDarkMode ? 'text-white' : 'text-slate-200/30'}`} />
                   </div>
 
-                   <div className="flex justify-between items-start mb-5 relative z-10">
+                  <div className="flex justify-between items-start mb-5 relative z-10">
                     <div className="text-left">
                       <div className="flex items-center gap-2">
                         {stock.isUptrendPullback && (
@@ -1155,20 +1150,18 @@ export default function App() {
                       <p className="text-[10px] text-slate-500 mt-2 uppercase font-bold tracking-widest truncate max-w-[120px]">{stock.name}</p>
                     </div>
                     <div className="text-right">
-                      <div className={`text-sm font-black tracking-widest ${
-                        stock.price === 0 || stock.change === 0
+                      <div className={`text-sm font-black tracking-widest ${stock.price === 0 || stock.change === 0
                           ? (isDarkMode ? 'text-white' : 'text-slate-800')
                           : stock.change > 0
-                          ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')
-                          : (isDarkMode ? 'text-rose-400' : 'text-rose-600')
-                      }`}>${stock.price.toFixed(2)}</div>
-                      <div className={`text-[10px] font-bold mt-1 ${
-                        stock.price === 0 || stock.change === 0
+                            ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')
+                            : (isDarkMode ? 'text-rose-400' : 'text-rose-600')
+                        }`}>${stock.price.toFixed(2)}</div>
+                      <div className={`text-[10px] font-bold mt-1 ${stock.price === 0 || stock.change === 0
                           ? (isDarkMode ? 'text-slate-500' : 'text-slate-400')
                           : stock.change > 0
-                          ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')
-                          : (isDarkMode ? 'text-rose-400' : 'text-rose-600')
-                      }`}>
+                            ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')
+                            : (isDarkMode ? 'text-rose-400' : 'text-rose-600')
+                        }`}>
                         {stock.change === 0 ? '' : stock.change > 0 ? '↑' : '↓'} {Math.abs(stock.change).toFixed(2)}%
                       </div>
                     </div>
