@@ -147,7 +147,7 @@ html:not(.dark) td.sticky {
 }
 
 html:not(.dark) tr:hover td.sticky {
-  background-color: var(--table-row-hover) !important;
+  background-color: #f1f5f9 !important; /* solid slate-100 to prevent scroll transparency bleed */
 }
 
 /* Dark Mode Sticky Cell Custom Solid Backgrounds & Divider Shadows */
@@ -164,6 +164,6 @@ html.dark td.sticky {
 }
 
 html.dark tr:hover td.sticky {
-  background-color: var(--table-row-hover) !important;
+  background-color: #121826 !important; /* solid opaque dark color to prevent scroll transparency bleed */
 }
 
