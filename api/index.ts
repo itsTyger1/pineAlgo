@@ -151,7 +151,7 @@ const META_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 const SUMMARY_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours for sectors/profiles
 
 const CACHE_FILE = path.join(process.cwd(), 'api', 'summary-cache.json');
-let summaryCache: Record<string, { data: any, timestamp: number }> = {};
+let summaryCache: Record<string, string | { data: any, timestamp: number }> = {};
 
 // Load persistent summary cache at startup
 try {
@@ -360,8 +360,9 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
   const cacheKey = `${symbol}_${timeframe}`;
   if (!bypassCache && cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp) < CACHE_TTL) {
     const cachedData = cache[cacheKey].data;
-    if (cachedData.sector === 'Other' && summaryCache[symbol]?.data?.assetProfile?.sector) {
-      cachedData.sector = summaryCache[symbol].data.assetProfile.sector;
+    if (cachedData.sector === 'Other' && summaryCache[symbol.toUpperCase()]) {
+      const cachedSector = summaryCache[symbol.toUpperCase()];
+      cachedData.sector = typeof cachedSector === 'string' ? cachedSector : (cachedSector as any).data?.assetProfile?.sector || 'Other';
     }
     return cachedData;
   }
@@ -471,7 +472,17 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
   }
 
   let sector = 'Other';
-  const summary = summaryCache[symbol]?.data;
+  const cachedSector = summaryCache[symbol.toUpperCase()];
+  if (cachedSector) {
+    sector = typeof cachedSector === 'string' ? cachedSector : (cachedSector as any).data?.assetProfile?.sector || 'Other';
+  } else {
+    // Fire off sector fetch asynchronously in the background for unknowns without blocking
+    yfQueue.add(() => yahooFinance.quoteSummary(symbol, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
+      if (res?.assetProfile?.sector) {
+        summaryCache[symbol.toUpperCase()] = res.assetProfile.sector;
+      }
+    }).catch(() => null), 3000);
+  }
 
   // Fallback map for popular stocks if YF rate limits us on AWS/Vercel
   const SECTOR_MAP: Record<string, string> = {
@@ -562,16 +573,14 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     "EQIX": "Real Estate", "WY": "Real Estate", "SMR": "Utilities", "CCJ": "Energy"
   };
 
-  if (summary?.assetProfile?.sector) {
-    sector = summary.assetProfile.sector;
-  } else if (SECTOR_MAP[symbol]) {
-    sector = SECTOR_MAP[symbol];
-  } else if (quote?.quoteType === 'ETF') {
-    sector = 'ETF / Fund';
-  } else if (quote?.quoteType === 'MUTUALFUND') {
-    sector = 'Mutual Fund';
-  } else {
-    sector = 'Other';
+  if (sector === 'Other') {
+    if (SECTOR_MAP[symbol.toUpperCase()]) {
+      sector = SECTOR_MAP[symbol.toUpperCase()];
+    } else if (quote?.quoteType === 'ETF') {
+      sector = 'ETF / Fund';
+    } else if (quote?.quoteType === 'MUTUALFUND') {
+      sector = 'Mutual Fund';
+    }
   }
 
   if (prices.length === 0) {
@@ -671,7 +680,7 @@ app.post("/api/analysis/batch", async (req, res) => {
       }
 
       // 2. Fire off summary fetches in background (don't block analysis, rate-limit safe)
-      const missingSummaries = symbols.filter(s => !summaryCache[s] || (Date.now() - summaryCache[s].timestamp) > SUMMARY_CACHE_TTL);
+      const missingSummaries = symbols.filter(s => !summaryCache[s.toUpperCase()]);
       if (missingSummaries.length > 0) {
         setTimeout(() => {
           const toFetch = missingSummaries.slice(0, 25);
@@ -679,8 +688,7 @@ app.post("/api/analysis/batch", async (req, res) => {
             setTimeout(() => {
               yfQueue.add(() => yahooFinance.quoteSummary(sym, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
                 if (res?.assetProfile?.sector) {
-                  summaryCache[sym] = { data: res, timestamp: Date.now() };
-                  saveSummaryCache();
+                  summaryCache[sym.toUpperCase()] = res.assetProfile.sector;
                 }
               }).catch(() => null), 20000);
             }, index * 350); // Space them out by 350ms to be gentle on Yahoo Finance
