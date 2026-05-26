@@ -364,9 +364,10 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     case '1d':
     default:
       interval = '1d';
-      // Huge optimization: only fetch 45 days for RSI calculation instead of 400!
-      // We will use the yahoo quote MAs for timeframe 1d.
-      startDate = subDays(endDate, 45);
+      // Need ~150 days for RSI(21) Wilder's smoothing to converge properly.
+      // 45 days only yields ~31 bars which causes RSI drift near zone boundaries.
+      // MAs still come from Yahoo quote endpoint, so this extra data is only for RSI.
+      startDate = subDays(endDate, 150);
       break;
   }
 
