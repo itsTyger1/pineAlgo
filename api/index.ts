@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import cors from "cors";
+import fs from "fs";
 import YahooFinance from 'yahoo-finance2';
 import { subDays, format } from 'date-fns';
 
@@ -146,9 +147,34 @@ const CORE_SYMBOLS = [
 
 // Cache for basic stock info to avoid redundant calls
 const quoteCache: Record<string, { data: any, timestamp: number }> = {};
-const summaryCache: Record<string, { data: any, timestamp: number }> = {};
 const META_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 const SUMMARY_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours for sectors/profiles
+
+const CACHE_FILE = path.join(process.cwd(), 'api', 'summary-cache.json');
+let summaryCache: Record<string, { data: any, timestamp: number }> = {};
+
+// Load persistent summary cache at startup
+try {
+  if (fs.existsSync(CACHE_FILE)) {
+    const raw = fs.readFileSync(CACHE_FILE, 'utf8');
+    summaryCache = JSON.parse(raw);
+    console.log(`Loaded ${Object.keys(summaryCache).length} cached sectors/summaries from persistent cache file.`);
+  }
+} catch (e) {
+  console.warn("Failed to load persistent summary cache file:", e);
+}
+
+function saveSummaryCache() {
+  try {
+    const dir = path.dirname(CACHE_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(summaryCache, null, 2), 'utf8');
+  } catch (e) {
+    console.warn("Failed to save summary cache file:", e);
+  }
+}
 
 // Cache for screener output
 let cachedStockList: any[] = [];
@@ -644,13 +670,23 @@ app.post("/api/analysis/batch", async (req, res) => {
         }
       }
 
-      // 2. Fire off summary fetches in background (don't block analysis)
+      // 2. Fire off summary fetches in background (don't block analysis, rate-limit safe)
       const missingSummaries = symbols.filter(s => !summaryCache[s] || (Date.now() - summaryCache[s].timestamp) > SUMMARY_CACHE_TTL);
-      missingSummaries.slice(0, 10).forEach(sym =>
-        yfQueue.add(() => yahooFinance.quoteSummary(sym, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
-          if (res) summaryCache[sym] = { data: res, timestamp: Date.now() };
-        }).catch(() => null), 20000)
-      );
+      if (missingSummaries.length > 0) {
+        setTimeout(() => {
+          const toFetch = missingSummaries.slice(0, 25);
+          toFetch.forEach((sym, index) => {
+            setTimeout(() => {
+              yfQueue.add(() => yahooFinance.quoteSummary(sym, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
+                if (res?.assetProfile?.sector) {
+                  summaryCache[sym] = { data: res, timestamp: Date.now() };
+                  saveSummaryCache();
+                }
+              }).catch(() => null), 20000);
+            }, index * 350); // Space them out by 350ms to be gentle on Yahoo Finance
+          });
+        }, 3000); // Wait 3s so the primary chart queries execute first
+      }
 
       // 3. Run all analyses in parallel (don't wait for summaries)
       const analysisPromises = symbols.map(async (sym) => {

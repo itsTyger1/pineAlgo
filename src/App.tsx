@@ -1045,7 +1045,9 @@ export default function App() {
                                 </span>
                               )}
                             </div>
-                            <span className={`text-[8px] md:text-[9px] ${isDarkMode ? 'text-indigo-400/60' : 'text-indigo-600/80'} font-bold uppercase truncate max-w-[60px] md:max-w-none mt-1 sector-label text-left md:text-center`}>{stock.sector}</span>
+                            {stock.sector && stock.sector !== 'Other' && stock.sector !== 'Unknown' && (
+                              <span className={`text-[8px] md:text-[9px] ${isDarkMode ? 'text-indigo-400/60' : 'text-indigo-600/80'} font-bold uppercase truncate max-w-[60px] md:max-w-none mt-1 sector-label text-left md:text-center`}>{stock.sector}</span>
+                            )}
                           </div>
                         </div>
                       </td>
