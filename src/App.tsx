@@ -447,10 +447,6 @@ export default function App() {
     return map;
   }, [symbols, stocksByTimeframe]);
 
-  const goldenStarCount = useMemo(() => {
-    return Object.values(goldenStarMap).filter(Boolean).length;
-  }, [goldenStarMap]);
-
   // Uptrend Pullback algorithm: identifies assets in macro uptrend experiencing micro pullback/consolidation
   const uptrendPullbackMap = useMemo(() => {
     const map: Record<string, boolean> = {};
@@ -469,10 +465,6 @@ export default function App() {
     });
     return map;
   }, [symbols, stocksByTimeframe]);
-
-  const uptrendPullbackCount = useMemo(() => {
-    return Object.values(uptrendPullbackMap).filter(Boolean).length;
-  }, [uptrendPullbackMap]);
 
   const rankedStocks = useMemo(() => {
     return symbols.map(s => {
@@ -500,6 +492,37 @@ export default function App() {
       };
     });
   }, [symbols, stocksByTimeframe, symbolRanks, goldenStarMap, uptrendPullbackMap]);
+
+  // Dynamic counts for Golden Star and Uptrend Pullback badges, respecting other active filters
+  const goldenStarCount = useMemo(() => {
+    return rankedStocks.filter(s => {
+      if (!s.isGoldenStar) return false;
+      const matchesSearch = s.symbol.toLowerCase().includes(search.toLowerCase()) ||
+        s.name.toLowerCase().includes(search.toLowerCase());
+      const matchesH = hSignalFilter.length === 0 || hSignalFilter.includes(stocksByTimeframe['1h'][s.symbol]?.zone || 'Neutral Zone');
+      const matchesHr = hrSignalFilter.length === 0 || hrSignalFilter.includes(stocksByTimeframe['4hr'][s.symbol]?.zone || 'Neutral Zone');
+      const matchesD = dSignalFilter.length === 0 || dSignalFilter.includes(stocksByTimeframe['1d'][s.symbol]?.zone || 'Neutral Zone');
+      const matchesW = wSignalFilter.length === 0 || wSignalFilter.includes(stocksByTimeframe['1wk'][s.symbol]?.zone || 'Neutral Zone');
+      const matchesM = mSignalFilter.length === 0 || mSignalFilter.includes(stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral Zone');
+      const matchesSector = sectorFilters.length === 0 || sectorFilters.includes(s.sector);
+      return matchesSearch && matchesH && matchesHr && matchesD && matchesW && matchesM && matchesSector;
+    }).length;
+  }, [rankedStocks, search, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe]);
+
+  const uptrendPullbackCount = useMemo(() => {
+    return rankedStocks.filter(s => {
+      if (!s.isUptrendPullback) return false;
+      const matchesSearch = s.symbol.toLowerCase().includes(search.toLowerCase()) ||
+        s.name.toLowerCase().includes(search.toLowerCase());
+      const matchesH = hSignalFilter.length === 0 || hSignalFilter.includes(stocksByTimeframe['1h'][s.symbol]?.zone || 'Neutral Zone');
+      const matchesHr = hrSignalFilter.length === 0 || hrSignalFilter.includes(stocksByTimeframe['4hr'][s.symbol]?.zone || 'Neutral Zone');
+      const matchesD = dSignalFilter.length === 0 || dSignalFilter.includes(stocksByTimeframe['1d'][s.symbol]?.zone || 'Neutral Zone');
+      const matchesW = wSignalFilter.length === 0 || wSignalFilter.includes(stocksByTimeframe['1wk'][s.symbol]?.zone || 'Neutral Zone');
+      const matchesM = mSignalFilter.length === 0 || mSignalFilter.includes(stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral Zone');
+      const matchesSector = sectorFilters.length === 0 || sectorFilters.includes(s.sector);
+      return matchesSearch && matchesH && matchesHr && matchesD && matchesW && matchesM && matchesSector;
+    }).length;
+  }, [rankedStocks, search, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe]);
 
   const filteredStocks = useMemo(() => {
     const list = rankedStocks.filter(s => {
