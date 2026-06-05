@@ -378,23 +378,26 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
       break;
     case '4hr':
       interval = '60m';
-      startDate = subDays(endDate, 150);
+      // 360 days yields ~480 candles (2 per trading day).
+      // This ensures SMA(200) always has 200+ candles and RSI(21) converges properly.
+      startDate = subDays(endDate, 360);
       break;
     case '1wk':
       interval = '1wk';
-      startDate = subDays(endDate, 1500);
+      // 3000 days yields ~428 weekly candles, ensuring SMA(200) and RSI(21) convergence.
+      startDate = subDays(endDate, 3000);
       break;
     case '1mo':
       interval = '1mo';
-      startDate = subDays(endDate, 7000);
+      // 12000 days yields ~400 monthly candles, ensuring SMA(200) and RSI(21) convergence.
+      startDate = subDays(endDate, 12000);
       break;
     case '1d':
     default:
       interval = '1d';
-      // Need ~150 days for RSI(21) Wilder's smoothing to converge properly.
-      // 45 days only yields ~31 bars which causes RSI drift near zone boundaries.
+      // Need ~360 calendar days (~250 trading bars) for RSI(21) Wilder's smoothing to converge properly.
       // MAs still come from Yahoo quote endpoint, so this extra data is only for RSI.
-      startDate = subDays(endDate, 150);
+      startDate = subDays(endDate, 360);
       break;
   }
 
