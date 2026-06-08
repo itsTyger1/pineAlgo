@@ -204,41 +204,109 @@ app.get("/api/stocks", async (req, res) => {
   };
 
   try {
-    const fetchStocksTask = async () => {
-      // Fetch from multiple categories to get a broader list targeting top market caps
-      const screeners = [
-        "most_actives",
-        "undervalued_large_caps",
-        "growth_technology_stocks",
-        "undervalued_growth_stocks",
-        "day_gainers",
-        "most_shorted_stocks"
-      ];
+    // Helper: fetch a single page from Yahoo's custom screener POST API
+    // This is the same API that powers https://finance.yahoo.com/research-hub/screener/equity/
+    // We use native fetch (not yahooFinance._fetch) because the library's _fetch only supports GET.
+    const fetchScreenerPage = async (offset: number, size: number): Promise<any[]> => {
+      // Get cookies and crumb from the yahoo-finance2 instance's internal state
+      const cookieJar = (yahooFinance as any)._opts.cookieJar;
+      const screenerUrl = "https://query2.finance.yahoo.com/v1/finance/screener";
+      const cookies = await cookieJar.getCookieString(screenerUrl);
+      const configCookies = await cookieJar.getCookies("http://config.yf2/");
+      const crumbCookie = configCookies.find((c: any) => c.key === "crumb");
+      const crumb = crumbCookie?.value || "";
 
-      const results = await Promise.allSettled(
-        screeners.map(id => yfQueue.add(() => (yahooFinance as any).screener({ scrIds: id, count: 250 }, undefined, { validateResult: false }).catch(() => ({ quotes: [] }))))
-      );
+      const payload = {
+        offset,
+        size,
+        sortField: "intradaymarketcap",
+        sortType: "DESC",
+        quoteType: "equity",
+        query: {
+          operator: "and",
+          operands: [
+            { operator: "eq", operands: ["region", "us"] }
+          ]
+        },
+        userId: "",
+        userIdType: "guid"
+      };
 
-
-      const allQuotes: any[] = [];
-      results.forEach(r => {
-        if (r.status === 'fulfilled' && r.value && (r.value as any).quotes) {
-          allQuotes.push(...(r.value as any).quotes);
-        }
+      const response = await fetch(`${screenerUrl}?crumb=${encodeURIComponent(crumb)}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Cookie": cookies,
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+        body: JSON.stringify(payload)
       });
+      const data = await response.json() as any;
 
-      // Try for core quotes too
+      if (data?.finance?.result?.[0]?.quotes) {
+        return data.finance.result[0].quotes;
+      }
+      return [];
+    };
+
+    const fetchStocksTask = async () => {
+      // Primary approach: Use Yahoo's custom screener POST API to get top 500 US equities by market cap
+      let allQuotes: any[] = [];
+      let usedCustomScreener = false;
+
       try {
-        const coreQuotes = await fetchQuoteWithRetry(CORE_SYMBOLS);
-        if (Array.isArray(coreQuotes)) {
-          allQuotes.push(...coreQuotes);
+        console.log("Fetching stocks via custom screener POST API (sorted by marketCap DESC)...");
+        // Ensure yahoo-finance2 has initialized its crumb/cookies (lazy init on first authenticated call)
+        await yfQueue.add(() => yahooFinance.quote("AAPL", {}, { validateResult: false }), 10000);
+        // Paginate: 2 requests of 250 to get 500 stocks
+        const [page1, page2] = await Promise.all([
+          yfQueue.add(() => fetchScreenerPage(0, 250), 20000),
+          yfQueue.add(() => fetchScreenerPage(250, 250), 20000)
+        ]);
+        allQuotes = [...page1, ...page2];
+        if (allQuotes.length > 0) {
+          usedCustomScreener = true;
+          console.log(`Custom screener returned ${allQuotes.length} stocks.`);
         }
-      } catch (e) {
-        console.warn("Core quotes fetch failed");
+      } catch (e: any) {
+        console.warn("Custom screener POST failed, falling back to predefined screeners:", e.message);
+      }
+
+      // Fallback: Use predefined screeners if custom screener returned nothing
+      if (!usedCustomScreener) {
+        console.log("Falling back to predefined screeners...");
+        const screeners = [
+          "most_actives",
+          "undervalued_large_caps",
+          "growth_technology_stocks",
+          "undervalued_growth_stocks",
+          "day_gainers",
+          "most_shorted_stocks"
+        ];
+
+        const results = await Promise.allSettled(
+          screeners.map(id => yfQueue.add(() => (yahooFinance as any).screener({ scrIds: id, count: 250 }, undefined, { validateResult: false }).catch(() => ({ quotes: [] }))))
+        );
+
+        results.forEach(r => {
+          if (r.status === 'fulfilled' && r.value && (r.value as any).quotes) {
+            allQuotes.push(...(r.value as any).quotes);
+          }
+        });
+
+        // Try for core quotes too
+        try {
+          const coreQuotes = await fetchQuoteWithRetry(CORE_SYMBOLS);
+          if (Array.isArray(coreQuotes)) {
+            allQuotes.push(...coreQuotes);
+          }
+        } catch (e) {
+          console.warn("Core quotes fetch failed");
+        }
       }
 
       if (allQuotes.length === 0) {
-        // One last desperate attempt: just use CORE_SYMBOLS as symbols if all screeners failed
+        // Last resort: use CORE_SYMBOLS as symbols if everything failed
         return CORE_SYMBOLS.map(symbol => ({
           symbol,
           marketCap: 0,
