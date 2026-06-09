@@ -563,6 +563,7 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     yfQueue.add(() => yahooFinance.quoteSummary(symbol, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
       if (res?.assetProfile?.sector) {
         summaryCache[symbol.toUpperCase()] = res.assetProfile.sector;
+        saveSummaryCache();
       }
     }).catch(() => null), 3000);
   }
@@ -705,6 +706,12 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
   else if (isMacroUptrend && rsi <= 45) zone = "Value Zone";
   else if (isMacroDowntrend) zone = "Sell Zone";
 
+  // Unify sector naming to avoid duplicate/inconsistent UI filters
+  if (sector === 'Financials') sector = 'Financial Services';
+  else if (sector === 'Communication') sector = 'Communication Services';
+  else if (sector === 'Materials') sector = 'Basic Materials';
+  else if (sector === 'Consumer') sector = 'Consumer Cyclical';
+
   const data = {
     symbol,
     name: quote?.longName || quote?.shortName || symbol,
@@ -773,6 +780,7 @@ app.post("/api/analysis/batch", async (req, res) => {
               yfQueue.add(() => yahooFinance.quoteSummary(sym, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
                 if (res?.assetProfile?.sector) {
                   summaryCache[sym.toUpperCase()] = res.assetProfile.sector;
+                  saveSummaryCache();
                 }
               }).catch(() => null), 20000);
             }, index * 350); // Space them out by 350ms to be gentle on Yahoo Finance
