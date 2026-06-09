@@ -179,7 +179,6 @@ export default function App() {
   const mSignalRef = useRef<HTMLDivElement>(null);
   const sectorRef = useRef<HTMLDivElement>(null);
   const activeTimeframeRef = useRef(timeframe);
-  const loadIdRef = useRef(0);
 
   useEffect(() => {
     activeTimeframeRef.current = timeframe;
@@ -277,8 +276,6 @@ export default function App() {
       setLoading(true);
       setError(null);
       
-      const loadId = ++loadIdRef.current;
-      
       fetchingTimeframes.current.clear();
       setDisplayedCountsByTimeframe({ '1h': 0, '4hr': 0, '1d': 0, '1wk': 0, '1mo': 0 });
       const data = await fetchWithRetry(`/api/stocks${refresh ? '?refresh=true' : ''}`);
@@ -287,24 +284,15 @@ export default function App() {
         setSymbols(uniqueData);
         setStocksByTimeframe({ '1h': {}, '4hr': {}, '1d': {}, '1wk': {}, '1mo': {} });
 
-        // Fetch the active timeframe first so the dashboard responds immediately
-        const activeTF = activeTimeframeRef.current;
-        await fetchAllAnalysis(uniqueData.map(s => s.symbol), activeTF, refresh);
-
-        // Fetch the remaining timeframes sequentially in the background
+        // Start ALL timeframes in parallel for fastest possible load
         const allTFs = ['1h', '4hr', '1d', '1wk', '1mo'] as const;
-        const otherTFs = allTFs.filter(tf => tf !== activeTF);
-        
-        (async () => {
-          for (const tf of otherTFs) {
-            if (loadId !== loadIdRef.current) break;
-            try {
-              await fetchAllAnalysis(uniqueData.map(s => s.symbol), tf, refresh);
-            } catch (e) {
-              console.error(`Background fetch failed for timeframe ${tf}:`, e);
-            }
-          }
-        })();
+        const allPromises = allTFs.map(tf =>
+          fetchAllAnalysis(uniqueData.map(s => s.symbol), tf, refresh)
+        );
+
+        // Wait for the active timeframe to finish (for loading state)
+        const activeIndex = allTFs.indexOf(activeTimeframeRef.current);
+        await allPromises[activeIndex];
       } else {
         setError('Failed to fetch stock list');
       }
