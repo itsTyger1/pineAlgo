@@ -323,14 +323,20 @@ app.get("/api/stocks", async (req, res) => {
       // Deduplicate by symbol and populate quote cache
       const uniqueStocksMap = new Map();
       allQuotes.forEach((q: any) => {
-        if (q && q.symbol && ALLOWED_EXCHANGES.has(q.exchange) && !uniqueStocksMap.has(q.symbol)) {
-          uniqueStocksMap.set(q.symbol, {
-            symbol: q.symbol,
-            marketCap: q.marketCap || 0,
-            name: q.longName || q.shortName || q.symbol
-          });
-          // Seed the quote cache to save a per-symbol request later
-          quoteCache[q.symbol] = { data: q, timestamp: Date.now() };
+        if (q && q.symbol && ALLOWED_EXCHANGES.has(q.exchange)) {
+          // Exclude preferred share classes (symbols containing hyphens, except BRK-A and BRK-B)
+          if (q.symbol.includes('-') && !q.symbol.startsWith('BRK-')) {
+            return;
+          }
+          if (!uniqueStocksMap.has(q.symbol)) {
+            uniqueStocksMap.set(q.symbol, {
+              symbol: q.symbol,
+              marketCap: q.marketCap || 0,
+              name: q.longName || q.shortName || q.symbol
+            });
+            // Seed the quote cache to save a per-symbol request later
+            quoteCache[q.symbol] = { data: q, timestamp: Date.now() };
+          }
         }
       });
 
@@ -738,6 +744,7 @@ app.post("/api/analysis/batch", async (req, res) => {
   }
 
   try {
+    const results: any[] = [];
     const fetchBatchTask = async () => {
       // 1. Fetch ALL missing quotes in one go (batch optimized)
       const missingQuotes = refresh
@@ -776,21 +783,26 @@ app.post("/api/analysis/batch", async (req, res) => {
       // 3. Run all analyses in parallel (don't wait for summaries)
       const analysisPromises = symbols.map(async (sym) => {
         try {
-          return await getAnalysis(sym, timeframe, refresh);
+          const res = await getAnalysis(sym, timeframe, refresh);
+          if (res) {
+            results.push(res);
+          }
+          return res;
         } catch (e: any) {
           return null;
         }
       });
 
-      const settledResults = await Promise.allSettled(analysisPromises);
-      return settledResults.map(r => r.status === 'fulfilled' ? r.value : null).filter(r => r !== null);
+      await Promise.allSettled(analysisPromises);
+      return results;
     };
 
-    const timeoutLimit = new Promise<any[]>((_, r) => setTimeout(() => r([]), 28000));
+    const timeoutLimit = new Promise<any[]>((resolve) => setTimeout(() => resolve(results), 28000));
 
-    // We race the batch task against a 28 second timeout to avoid proxy 504 timeouts
-    const results = await Promise.race([fetchBatchTask(), timeoutLimit]);
-    res.json(results);
+    // We race the batch task against a 28 second timeout to avoid proxy 504 timeouts.
+    // If it times out, we still return whatever results were successfully processed so far.
+    const finalResults = await Promise.race([fetchBatchTask(), timeoutLimit]);
+    res.json(finalResults);
   } catch (error: any) {
     res.status(500).json({ error: "Batch analysis failed", details: error.message });
   }
