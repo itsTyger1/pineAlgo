@@ -257,13 +257,16 @@ app.get("/api/stocks", async (req, res) => {
       try {
         console.log("Fetching stocks via custom screener POST API (sorted by marketCap DESC)...");
         // Ensure yahoo-finance2 has initialized its crumb/cookies (lazy init on first authenticated call)
-        await yfQueue.add(() => yahooFinance.quote("AAPL", {}, { validateResult: false }), 10000);
-        // Paginate: 2 requests of 250 to get 500 stocks
-        const [page1, page2] = await Promise.all([
-          yfQueue.add(() => fetchScreenerPage(0, 250), 20000),
-          yfQueue.add(() => fetchScreenerPage(250, 250), 20000)
+        await yahooFinance.quote("AAPL", {}, { validateResult: false });
+        // Paginate: 5 requests of 250 to get 1250 stocks, ensuring we get at least 500 major exchange equities after filtering out OTC
+        const [page1, page2, page3, page4, page5] = await Promise.all([
+          fetchScreenerPage(0, 250),
+          fetchScreenerPage(250, 250),
+          fetchScreenerPage(500, 250),
+          fetchScreenerPage(750, 250),
+          fetchScreenerPage(1000, 250)
         ]);
-        allQuotes = [...page1, ...page2];
+        allQuotes = [...page1, ...page2, ...page3, ...page4, ...page5];
         if (allQuotes.length > 0) {
           usedCustomScreener = true;
           console.log(`Custom screener returned ${allQuotes.length} stocks.`);
@@ -314,10 +317,13 @@ app.get("/api/stocks", async (req, res) => {
         }));
       }
 
+      // Keep only major exchanges and exclude OTC/foreign pink sheets (like RHHBF, HBCYF)
+      const ALLOWED_EXCHANGES = new Set(['NYQ', 'NMS', 'NGM', 'NCM', 'ASE', 'BATS', 'BTS']);
+
       // Deduplicate by symbol and populate quote cache
       const uniqueStocksMap = new Map();
       allQuotes.forEach((q: any) => {
-        if (q && q.symbol && !uniqueStocksMap.has(q.symbol)) {
+        if (q && q.symbol && ALLOWED_EXCHANGES.has(q.exchange) && !uniqueStocksMap.has(q.symbol)) {
           uniqueStocksMap.set(q.symbol, {
             symbol: q.symbol,
             marketCap: q.marketCap || 0,
