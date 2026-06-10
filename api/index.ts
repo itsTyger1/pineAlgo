@@ -4,6 +4,11 @@ import cors from "cors";
 import fs from "fs";
 import YahooFinance from 'yahoo-finance2';
 import { subDays, format } from 'date-fns';
+import { GoogleGenAI } from "@google/genai";
+
+let cachedDigest: string | null = null;
+let lastDigestTime = 0;
+const DIGEST_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 const yahooFinance = new YahooFinance();
 const app = express();
@@ -813,6 +818,89 @@ app.post("/api/analysis/batch", async (req, res) => {
     res.json(finalResults);
   } catch (error: any) {
     res.status(500).json({ error: "Batch analysis failed", details: error.message });
+  }
+});
+
+app.post("/api/market-digest", async (req, res) => {
+  const { total, stats, signals, notableStocks, forceRefresh = false } = req.body;
+
+  if (!total || !stats || !signals) {
+    return res.status(400).json({ error: "Missing required dashboard stats" });
+  }
+
+  const { buyCount, valueCount, sellCount, neutralCount } = stats;
+  const { goldenStarCount, uptrendPullbackCount } = signals;
+
+  // Check cache
+  if (!forceRefresh && cachedDigest && (Date.now() - lastDigestTime < DIGEST_CACHE_TTL)) {
+    return res.json({ digest: cachedDigest, cached: true });
+  }
+
+  // Handle Demo Mode if API key is not present
+  if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+    const combinedBullish = buyCount + valueCount;
+    const combinedBullishPercent = total > 0 ? Math.round((combinedBullish / total) * 100) : 0;
+    const buyPercent = total > 0 ? Math.round((buyCount / total) * 100) : 0;
+    const valuePercent = total > 0 ? Math.round((valueCount / total) * 100) : 0;
+    const sellPercent = total > 0 ? Math.round((sellCount / total) * 100) : 0;
+
+    const fallbackText = `**[DEMO MODE - Gemini API Key Not Configured]**
+
+**Market Pulse:** Out of **${total}** analyzed symbols, **${combinedBullish}** are trading in bullish territories (**${combinedBullishPercent}%** of the total market). Specifically, **${buyCount}** (${buyPercent}%) are positioned in the *Buy Zone* indicating sustained bullish alignment, and **${valueCount}** (${valuePercent}%) reside in the *Value Zone* representing macro uptrends undergoing technical pullbacks. On the bearish spectrum, **${sellCount}** (${sellPercent}%) symbols are in the *Sell Zone*.
+
+**Key Setup Alerts:**
+- **Golden Star Signals:** **${goldenStarCount}** prime structural setups identified. These represent high-conviction alignments where weekly/monthly bull trends match daily/4H value configurations and short-term 1H oversold conditions.
+- **Uptrend Pullback Signals:** **${uptrendPullbackCount}** setups detected, indicating strong macro momentum with minor localized consolidations.
+
+*To enable real AI-generated narratives customized to these metrics, configure the \`GEMINI_API_KEY\` environment variable in your user secrets.*`;
+
+    return res.json({ digest: fallbackText, cached: false, demo: true });
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+    // Construct the context prompt for Gemini
+    const prompt = `
+You are a senior quantitative market analyst summarizing the market condition based on the following algorithmically calculated stock data.
+Provide a concise, professional 3-4 paragraph "AI Market Digest".
+Use bold markdown sparingly for key tickers or stats. Focus on what this data means for entry setups.
+
+### INPUT DATA:
+- Total Analyzed Symbols: ${total}
+- Daily Timeframe Zone Breakdown:
+  * Buy Zone (Bullish crossover, RSI >= 48): ${buyCount} stocks (${Math.round(buyCount/total*100)}% of market)
+  * Value Zone (Bullish crossover, RSI <= 45 / pullback): ${valueCount} stocks (${Math.round(valueCount/total*100)}% of market)
+  * Sell Zone (Bearish crossover): ${sellCount} stocks (${Math.round(sellCount/total*100)}% of market)
+  * Neutral Zone: ${neutralCount} stocks (${Math.round(neutralCount/total*100)}% of market)
+- Custom Algorithmic Setups:
+  * Golden Stars (Macro uptrend + daily/4H value zone + 1H bleed - prime long-term entries): ${goldenStarCount} stocks
+  * Uptrend Pullbacks (Macro uptrend + local 1H/4H dip - momentum entries): ${uptrendPullbackCount} stocks
+- Top Major Stocks Status:
+  ${JSON.stringify(notableStocks || [])}
+
+### DIRECTIVES FOR SUMMARY:
+1. Synthesize the overall market "Flow" (Bullish or Bearish dominance based on Buy/Value vs Sell counts).
+2. Highlight the number of Golden Stars and Uptrend Pullback setups and what they represent in terms of immediate entry opportunities.
+3. Reference 2-3 notable tickers from the major stocks list that are in key zones (Buy Zone/Value Zone vs Sell Zone) and comment on their immediate technical posture.
+4. Keep the tone sharp, institutional, concise, and focused on helping a trader/investor make better entries. Do not mention the exact prompt or input format in your output.
+`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    if (response && response.text) {
+      cachedDigest = response.text;
+      lastDigestTime = Date.now();
+      res.json({ digest: cachedDigest, cached: false });
+    } else {
+      throw new Error("Empty response from Gemini");
+    }
+  } catch (err: any) {
+    console.error("Gemini API Error:", err);
+    res.status(500).json({ error: `Gemini generation failed: ${err.message || 'Unknown error'}` });
   }
 });
 
