@@ -21,8 +21,7 @@ import {
   ChevronDown,
   Sun,
   Moon,
-  Star,
-  Sparkles
+  Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -156,10 +155,6 @@ export default function App() {
   const [showGoldenStarsOnly, setShowGoldenStarsOnly] = useState(false);
   const [showPullbacksOnly, setShowPullbacksOnly] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
-  const [digest, setDigest] = useState<string | null>(null);
-  const [digestLoading, setDigestLoading] = useState(false);
-  const [digestExpanded, setDigestExpanded] = useState(false);
-  const [digestIsDemo, setDigestIsDemo] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -669,63 +664,6 @@ export default function App() {
     }
   };
 
-  const fetchDigest = async (force = false) => {
-    if (symbols.length === 0 || stats.total === 0) return;
-
-    try {
-      setDigestLoading(true);
-      const majorSymbols = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "NFLX", "AMD", "PLTR"];
-      const notable = majorSymbols.map(sym => {
-        const d1 = stocksByTimeframe['1d']?.[sym];
-        return {
-          symbol: sym,
-          zone: d1?.zone || 'Neutral Zone',
-          price: d1?.price || 0,
-          change: d1?.change || 0
-        };
-      }).filter(s => s.price > 0);
-
-      const response = await fetch('/api/market-digest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          total: stats.total,
-          stats: {
-            buyCount: stats.buyCount,
-            valueCount: stats.valueCount,
-            sellCount: stats.sellCount,
-            neutralCount: stats.neutralCount
-          },
-          signals: {
-            goldenStarCount,
-            uptrendPullbackCount
-          },
-          notableStocks: notable,
-          forceRefresh: force
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setDigest(data.digest);
-        setDigestIsDemo(!!data.demo);
-      } else {
-        console.warn('Failed to fetch AI digest');
-      }
-    } catch (e) {
-      console.error('Error fetching AI digest:', e);
-    } finally {
-      setDigestLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!loading && stats.total > 0 && !digest && !digestLoading) {
-      fetchDigest();
-    }
-  }, [loading, stats.total]);
-
-
 
   return (
     <div className={`min-h-screen transition-colors duration-300 font-sans selection:bg-indigo-500/30 relative ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-[#FAF9F5] text-slate-600'}`}>
@@ -900,80 +838,6 @@ export default function App() {
           <div className={`mb-6 p-4 border rounded-2xl flex items-center gap-3 text-sm backdrop-blur-md transition-all ${isDarkMode ? 'bg-rose-500/10 border-rose-500/20 text-rose-400 font-mono' : 'bg-rose-50 border-rose-200 text-rose-600 font-sans'}`}>
             <AlertCircle className={`w-4 h-4 ${isDarkMode ? 'shadow-rose-500/20' : ''}`} />
             <span className="font-medium tracking-tight whitespace-pre-wrap">{error}</span>
-          </div>
-        )}
-
-        {/* AI Market Digest Section */}
-        {stats.total > 0 && (
-          <div className={`mb-6 border rounded-2xl overflow-hidden backdrop-blur-xl transition-all duration-300 ${isDarkMode ? 'bg-slate-900/40 border-indigo-500/20 shadow-[0_4px_30px_rgba(99,102,241,0.05)]' : 'bg-white/80 border-slate-200/60 shadow-lg shadow-slate-100/40'}`}>
-            <div
-              onClick={() => setDigestExpanded(!digestExpanded)}
-              className={`p-4 md:p-5 flex items-center justify-between cursor-pointer select-none transition-colors ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50/50'}`}
-            >
-              <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isDarkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
-                  <Sparkles className="w-4.5 h-4.5 animate-pulse" />
-                </div>
-                <div className="text-left">
-                  <h3 className={`text-xs md:text-sm font-black uppercase tracking-wider flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                    Gemini AI Market Digest
-                    {digestIsDemo && (
-                      <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest ${isDarkMode ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-amber-50 text-amber-600 border border-amber-200'}`}>
-                        Demo Mode
-                      </span>
-                    )}
-                  </h3>
-                  <p className="text-[10px] text-slate-450 uppercase tracking-widest mt-0.5 font-bold">
-                    {digestLoading ? 'Synthesizing market metrics...' : 'Narrative synthesis of current multi-period zones'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {digest && !digestLoading && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      fetchDigest(true);
-                    }}
-                    disabled={digestLoading}
-                    className={`p-1.5 rounded-lg border transition-all active:scale-95 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer ${isDarkMode ? 'bg-slate-900 border-white/10 hover:bg-white/5 text-slate-400 hover:text-white' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-650 hover:text-slate-800 shadow-sm'}`}
-                    title="Force refresh digest"
-                  >
-                    <RefreshCcw className={`w-3 h-3 ${digestLoading ? 'animate-spin' : ''}`} />
-                    <span className="hidden sm:inline">Refresh</span>
-                  </button>
-                )}
-                <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} ${digestExpanded ? 'rotate-180' : ''}`} />
-              </div>
-            </div>
-
-            <AnimatePresence initial={false}>
-              {digestExpanded && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.25, ease: "easeInOut" }}
-                  className={`border-t ${isDarkMode ? 'border-white/5 bg-slate-950/20' : 'border-slate-100 bg-slate-50/20'}`}
-                >
-                  <div className="p-4 md:p-6 text-left">
-                    {digestLoading ? (
-                      <div className="space-y-3">
-                        <div className={`h-4 rounded-full w-3/4 animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-slate-200/60'}`}></div>
-                        <div className={`h-4 rounded-full w-5/6 animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-slate-200/60'}`}></div>
-                        <div className={`h-4 rounded-full w-2/3 animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-slate-200/60'}`}></div>
-                        <div className={`h-4 rounded-full w-1/2 animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-slate-200/60'}`}></div>
-                      </div>
-                    ) : (
-                      <div className={`text-xs md:text-sm leading-relaxed font-sans font-medium whitespace-pre-line space-y-4 ${isDarkMode ? 'text-slate-300' : 'text-slate-755'}`}>
-                        {digest}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         )}
 
