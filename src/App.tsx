@@ -21,8 +21,7 @@ import {
   ChevronDown,
   Sun,
   Moon,
-  Star,
-  Activity
+  Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -155,16 +154,6 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showGoldenStarsOnly, setShowGoldenStarsOnly] = useState(false);
   const [showPullbacksOnly, setShowPullbacksOnly] = useState(false);
-  const [previousZones, setPreviousZones] = useState<Record<string, Record<string, string>>>(() => {
-    try {
-      const saved = localStorage.getItem('pineAlgo_previous_zones');
-      return saved ? JSON.parse(saved) : { '1h': {}, '4hr': {}, '1d': {}, '1wk': {}, '1mo': {} };
-    } catch (e) {
-      console.warn('Failed to parse previous zones:', e);
-      return { '1h': {}, '4hr': {}, '1d': {}, '1wk': {}, '1mo': {} };
-    }
-  });
-  const [showZoneChangesOnly, setShowZoneChangesOnly] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     try {
@@ -537,41 +526,6 @@ export default function App() {
     }).length;
   }, [rankedStocks, search, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe]);
 
-  // Zone change detection map: identifies assets with zone transitions in ANY timeframe
-  const zoneChangesMap = useMemo(() => {
-    const map: Record<string, boolean> = {};
-    symbols.forEach(s => {
-      let changed = false;
-      const tfs = ['1h', '4hr', '1d', '1wk', '1mo'] as const;
-      for (const tf of tfs) {
-        const analysisExists = !!stocksByTimeframe[tf]?.[s.symbol];
-        const prevZone = previousZones[tf]?.[s.symbol];
-        const currentZone = stocksByTimeframe[tf]?.[s.symbol]?.zone || 'Neutral Zone';
-        if (analysisExists && prevZone && prevZone !== currentZone) {
-          changed = true;
-          break;
-        }
-      }
-      map[s.symbol] = changed;
-    });
-    return map;
-  }, [symbols, stocksByTimeframe, previousZones]);
-
-  const zoneChangesCount = useMemo(() => {
-    return rankedStocks.filter(s => {
-      if (!zoneChangesMap[s.symbol]) return false;
-      const matchesSearch = s.symbol.toLowerCase().includes(search.toLowerCase()) ||
-        s.name.toLowerCase().includes(search.toLowerCase());
-      const matchesH = hSignalFilter.length === 0 || hSignalFilter.includes(stocksByTimeframe['1h'][s.symbol]?.zone || 'Neutral Zone');
-      const matchesHr = hrSignalFilter.length === 0 || hrSignalFilter.includes(stocksByTimeframe['4hr'][s.symbol]?.zone || 'Neutral Zone');
-      const matchesD = dSignalFilter.length === 0 || dSignalFilter.includes(stocksByTimeframe['1d'][s.symbol]?.zone || 'Neutral Zone');
-      const matchesW = wSignalFilter.length === 0 || wSignalFilter.includes(stocksByTimeframe['1wk'][s.symbol]?.zone || 'Neutral Zone');
-      const matchesM = mSignalFilter.length === 0 || mSignalFilter.includes(stocksByTimeframe['1mo'][s.symbol]?.zone || 'Neutral Zone');
-      const matchesSector = sectorFilters.length === 0 || sectorFilters.includes(s.sector);
-      return matchesSearch && matchesH && matchesHr && matchesD && matchesW && matchesM && matchesSector;
-    }).length;
-  }, [rankedStocks, search, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, zoneChangesMap, stocksByTimeframe]);
-
   const filteredStocks = useMemo(() => {
     const list = rankedStocks.filter(s => {
       const matchesSearch = s.symbol.toLowerCase().includes(search.toLowerCase()) ||
@@ -594,10 +548,7 @@ export default function App() {
         matchesStarAndPullback = s.isUptrendPullback;
       }
 
-      // Zone changes filter
-      const matchesZoneChanges = !showZoneChangesOnly || zoneChangesMap[s.symbol];
-
-      return matchesSearch && matchesH && matchesHr && matchesD && matchesW && matchesM && matchesSector && matchesStarAndPullback && matchesZoneChanges;
+      return matchesSearch && matchesH && matchesHr && matchesD && matchesW && matchesM && matchesSector && matchesStarAndPullback;
     });
 
     return [...list].sort((a, b) => {
@@ -617,7 +568,7 @@ export default function App() {
       }
       return 0;
     });
-  }, [rankedStocks, search, sortBy, sortOrder, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe, showGoldenStarsOnly, showPullbacksOnly, showZoneChangesOnly, zoneChangesMap]);
+  }, [rankedStocks, search, sortBy, sortOrder, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, stocksByTimeframe, showGoldenStarsOnly, showPullbacksOnly]);
 
   const [visibleCount, setVisibleCount] = useState(50);
   const observerRef = useRef<HTMLDivElement>(null);
@@ -625,7 +576,7 @@ export default function App() {
   // Reset progressive scroll count when search or filters change
   useEffect(() => {
     setVisibleCount(50);
-  }, [search, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, sortBy, sortOrder, showGoldenStarsOnly, showPullbacksOnly, showZoneChangesOnly]);
+  }, [search, hSignalFilter, hrSignalFilter, dSignalFilter, wSignalFilter, mSignalFilter, sectorFilters, sortBy, sortOrder, showGoldenStarsOnly, showPullbacksOnly]);
 
   const visibleStocks = useMemo(() => {
     return filteredStocks.slice(0, visibleCount);
@@ -713,79 +664,7 @@ export default function App() {
     }
   };
 
-  // Save current zones to localStorage when loading finishes and fetching is complete
-  useEffect(() => {
-    if (!loading && fetchingTimeframes.current.size === 0) {
-      const hasData = Object.values(stocksByTimeframe).some(tfData => Object.keys(tfData).length > 0);
-      if (hasData) {
-        const baseline: Record<string, Record<string, string>> = {
-          '1h': {}, '4hr': {}, '1d': {}, '1wk': {}, '1mo': {}
-        };
-        const tfs = ['1h', '4hr', '1d', '1wk', '1mo'] as const;
-        tfs.forEach(tf => {
-          const data = stocksByTimeframe[tf] || {};
-          Object.keys(data).forEach(symbol => {
-            baseline[tf][symbol] = data[symbol].zone;
-          });
-        });
-        try {
-          localStorage.setItem('pineAlgo_previous_zones', JSON.stringify(baseline));
-        } catch (e) {
-          console.warn('Failed to save baseline to localStorage:', e);
-        }
-      }
-    }
-  }, [loading, stocksByTimeframe]);
 
-  const acknowledgeZoneChanges = () => {
-    const newBaseline: Record<string, Record<string, string>> = {
-      '1h': {}, '4hr': {}, '1d': {}, '1wk': {}, '1mo': {}
-    };
-    const tfs = ['1h', '4hr', '1d', '1wk', '1mo'] as const;
-    tfs.forEach(tf => {
-      const data = stocksByTimeframe[tf] || {};
-      Object.keys(data).forEach(symbol => {
-        newBaseline[tf][symbol] = data[symbol].zone;
-      });
-    });
-    setPreviousZones(newBaseline);
-    try {
-      localStorage.setItem('pineAlgo_previous_zones', JSON.stringify(newBaseline));
-    } catch (e) {
-      console.warn('Failed to save baseline to localStorage:', e);
-    }
-  };
-
-  const renderZoneBadgeWithChange = (symbol: string, tf: string) => {
-    const analysisExists = !!stocksByTimeframe[tf]?.[symbol];
-    const prevZone = previousZones[tf]?.[symbol];
-    const currentZone = stocksByTimeframe[tf]?.[symbol]?.zone || 'Neutral Zone';
-    const hasChanged = analysisExists && prevZone && prevZone !== currentZone;
-
-    const badge = getZoneBadge(currentZone);
-
-    if (hasChanged && prevZone) {
-      return (
-        <div className="flex flex-col items-center justify-center gap-0.5 relative group/zonechange">
-          <div className="relative">
-            {badge}
-            <span className="absolute -top-1 -right-1 flex h-1.5 w-1.5 md:h-2 md:w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 md:h-2 md:w-2 bg-indigo-500"></span>
-            </span>
-          </div>
-          <span
-            className="text-[7px] md:text-[8px] font-black uppercase tracking-wider text-indigo-400/80 mt-0.5 cursor-help whitespace-nowrap hover:text-indigo-400 transition-colors"
-            title={`Zone Transitioned: ${prevZone} ➔ ${currentZone}`}
-          >
-            from {prevZone.replace(' Zone', '')}
-          </span>
-        </div>
-      );
-    }
-
-    return badge;
-  };
 
   return (
     <div className={`min-h-screen transition-colors duration-300 font-sans selection:bg-indigo-500/30 relative ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-[#FAF9F5] text-slate-600'}`}>
@@ -1032,35 +911,6 @@ export default function App() {
                 <span className="hidden sm:inline">Golden Stars</span>
                 {goldenStarCount > 0 && <span className="text-[9px] md:text-[10px] opacity-65 font-bold">({goldenStarCount})</span>}
               </button>
-
-              {/* Zone Changes Filter */}
-              <button
-                onClick={() => setShowZoneChangesOnly(prev => !prev)}
-                className={`flex items-center gap-1 md:gap-1.5 px-2.5 py-1 md:px-3 md:py-1.5 rounded-xl border text-[10px] md:text-xs font-bold uppercase transition-all active:scale-95 cursor-pointer ${showZoneChangesOnly
-                    ? (isDarkMode ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/40 shadow-[0_0_12px_rgba(99,102,241,0.25)]' : 'bg-indigo-50 text-indigo-700 border-indigo-200 shadow-sm')
-                    : (isDarkMode ? 'bg-slate-900 border-white/10 hover:border-indigo-500/30 text-slate-400 hover:text-indigo-300' : 'bg-white border-slate-200/60 hover:border-indigo-500/30 text-slate-600 hover:text-indigo-700 shadow-sm')
-                  }`}
-                title="Filter by Zone Changes"
-              >
-                <Activity className={`w-3.5 h-3.5 shrink-0 ${showZoneChangesOnly ? 'text-indigo-400' : 'text-slate-400'}`} />
-                <span className="hidden sm:inline">Zone Changes</span>
-                {zoneChangesCount > 0 && <span className="text-[9px] md:text-[10px] opacity-65 font-bold">({zoneChangesCount})</span>}
-              </button>
-
-              {/* Clear / Acknowledge Alerts Button */}
-              {Object.values(zoneChangesMap).some(Boolean) && (
-                <button
-                  onClick={acknowledgeZoneChanges}
-                  className={`flex items-center gap-1 px-2 py-1 md:px-2.5 md:py-1.5 rounded-xl border text-[9px] md:text-[10px] font-black uppercase transition-all active:scale-95 cursor-pointer ${isDarkMode
-                      ? 'bg-slate-900 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/50'
-                      : 'bg-white border-emerald-200 text-emerald-600 hover:bg-emerald-50 shadow-sm'
-                    }`}
-                  title="Acknowledge all current zone changes and reset alerts"
-                >
-                  <Check className="w-3 h-3 md:w-3.5 md:h-3.5" />
-                  <span>Clear Alerts</span>
-                </button>
-              )}
             </div>
 
             {loading && <div className="text-[10px] font-bold text-indigo-400 animate-pulse tracking-[0.2em] hidden sm:block">SYNCHRONIZING...</div>}
@@ -1131,19 +981,7 @@ export default function App() {
                               <span className="absolute -top-1.5 -right-2 text-[7px] font-black text-amber-400 tabular-nums">{goldenStarCount}</span>
                             )}
                           </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setShowZoneChangesOnly(prev => !prev); }}
-                            className={`relative group/zonechange transition-all duration-200 active:scale-90 w-4.5 h-4.5 md:w-5 md:h-5 rounded-full flex items-center justify-center text-[9px] md:text-[10px] font-black shrink-0 ${showZoneChangesOnly
-                                ? (isDarkMode ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/40 shadow-[0_0_8px_rgba(99,102,241,0.5)]' : 'bg-indigo-100 text-indigo-700 border border-indigo-300 shadow-sm')
-                                : (isDarkMode ? 'bg-white/5 border border-white/10 text-slate-500 hover:text-indigo-400 hover:border-indigo-500/30' : 'bg-slate-100/50 border border-slate-200 text-slate-400 hover:text-indigo-700 hover:border-indigo-300')
-                              }`}
-                            title={showZoneChangesOnly ? 'Show All Assets' : `Filter: Zone Changes Only (${zoneChangesCount})`}
-                          >
-                            Δ
-                            {showZoneChangesOnly && zoneChangesCount > 0 && (
-                              <span className="absolute -top-1.5 -right-2 text-[7px] font-black text-indigo-400 tabular-nums">{zoneChangesCount}</span>
-                            )}
-                          </button>
+
                           <span
                             onClick={() => handleSort('change')}
                             className={`text-[9px] md:text-[10px] font-bold uppercase tracking-tighter cursor-pointer transition-colors duration-150 ${sortBy === 'change'
@@ -1284,19 +1122,19 @@ export default function App() {
                         </div>
                       </td>
                       <td id={`h-signal-${stock.symbol}`} className={`px-1 md:px-4 py-3 text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200/60'}`}>
-                        {renderZoneBadgeWithChange(stock.symbol, '1h')}
+                        {getZoneBadge(stocksByTimeframe['1h'][stock.symbol]?.zone || 'Neutral Zone')}
                       </td>
                       <td id={`hr-signal-${stock.symbol}`} className={`px-1 md:px-4 py-3 text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200/60'}`}>
-                        {renderZoneBadgeWithChange(stock.symbol, '4hr')}
+                        {getZoneBadge(stocksByTimeframe['4hr'][stock.symbol]?.zone || 'Neutral Zone')}
                       </td>
                       <td id={`d-signal-${stock.symbol}`} className={`px-1 md:px-4 py-3 text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200/60'}`}>
-                        {renderZoneBadgeWithChange(stock.symbol, '1d')}
+                        {getZoneBadge(stocksByTimeframe['1d'][stock.symbol]?.zone || 'Neutral Zone')}
                       </td>
                       <td id={`w-signal-${stock.symbol}`} className={`px-1 md:px-4 py-3 text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200/60'}`}>
-                        {renderZoneBadgeWithChange(stock.symbol, '1wk')}
+                        {getZoneBadge(stocksByTimeframe['1wk'][stock.symbol]?.zone || 'Neutral Zone')}
                       </td>
                       <td id={`m-signal-${stock.symbol}`} className={`px-1 md:px-4 py-3 text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200/60'}`}>
-                        {renderZoneBadgeWithChange(stock.symbol, '1mo')}
+                        {getZoneBadge(stocksByTimeframe['1mo'][stock.symbol]?.zone || 'Neutral Zone')}
                       </td>
                       <td className={`px-1 md:px-4 py-3 text-[10px] md:text-[11px] font-bold whitespace-nowrap text-center border-b ${isDarkMode ? 'border-white/5' : 'border-slate-200/60'} ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                         {formatMarketCap(stock.marketCap)}
@@ -1427,7 +1265,7 @@ export default function App() {
                   </div>
 
                   <div className="relative text-left">
-                    {renderZoneBadgeWithChange(stock.symbol, timeframe)}
+                    {getZoneBadge(stock.zone)}
                   </div>
                 </motion.div>
               ))}
