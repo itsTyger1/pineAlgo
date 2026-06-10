@@ -21,6 +21,6 @@
     "node_modules",
     "dist",
     "api",
-    "test-*.ts"
+    "tests"
   ]
 }
