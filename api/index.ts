@@ -754,7 +754,7 @@ app.get("/api/stock-details/:symbol", async (req, res) => {
     // 2. Fetch Chart (last 365 days daily bars to compute MAs and RSI correctly)
     const endDate = new Date();
     const startDate = subDays(endDate, 365);
-    const chartResult = await yfQueue.add(() => yahooFinance.chart(upperSymbol, {
+    const chartResult: any = await yfQueue.add(() => yahooFinance.chart(upperSymbol, {
       period1: startDate,
       period2: endDate,
       interval: '1d',
