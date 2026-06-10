@@ -181,6 +181,10 @@ let cachedStockList: any[] = [];
 let lastStockListCacheTime = 0;
 const STOCK_LIST_TTL = 15 * 60 * 1000; // 15 mins
 
+// Cache for stock details
+const detailsCache: Record<string, { data: any, timestamp: number }> = {};
+const DETAILS_CACHE_TTL = 15 * 60 * 1000; // 15 mins
+
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", vercel: process.env.VERCEL });
 });
@@ -730,6 +734,102 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
   cache[cacheKey] = { data, timestamp: Date.now() };
   return data;
 }
+
+app.get("/api/stock-details/:symbol", async (req, res) => {
+  const { symbol } = req.params;
+  const upperSymbol = symbol.toUpperCase();
+
+  // Check cache
+  if (detailsCache[upperSymbol] && (Date.now() - detailsCache[upperSymbol].timestamp) < DETAILS_CACHE_TTL) {
+    return res.json(detailsCache[upperSymbol].data);
+  }
+
+  try {
+    // 1. Fetch Quote for Key Stats
+    const quote = await yfQueue.add(() => yahooFinance.quote(upperSymbol, undefined, { validateResult: false }), 12000);
+    if (!quote) {
+      return res.status(404).json({ error: `Stock ${upperSymbol} not found` });
+    }
+
+    // 2. Fetch Chart (last 365 days daily bars to compute MAs and RSI correctly)
+    const endDate = new Date();
+    const startDate = subDays(endDate, 365);
+    const chartResult = await yfQueue.add(() => yahooFinance.chart(upperSymbol, {
+      period1: startDate,
+      period2: endDate,
+      interval: '1d',
+    }, { validateResult: false }), 12000);
+
+    const history = chartResult?.quotes || [];
+    if (history.length === 0) {
+      return res.status(404).json({ error: `No historical data found for ${upperSymbol}` });
+    }
+
+    // Filter valid historical closes
+    const validHistory = history.filter((q: any) => typeof q.close === 'number' && q.date);
+
+    // Compute close prices array
+    const closePrices = validHistory.map((q: any) => q.close as number);
+
+    // Slice and map the last 90 trading days.
+    // To compute SMA50, SMA200, and RSI21 for day i, we need the preceding values in closePrices.
+    const startIdx = Math.max(0, validHistory.length - 90);
+    const chartData = [];
+
+    for (let i = startIdx; i < validHistory.length; i++) {
+      const dateStr = format(new Date(validHistory[i].date), 'yyyy-MM-dd');
+      const pricesBefore = closePrices.slice(0, i + 1);
+
+      const sma50 = calculateSMA(pricesBefore, 50);
+      const sma200 = calculateSMA(pricesBefore, 200);
+      const rsi = calculateRSI(pricesBefore, 21);
+
+      chartData.push({
+        date: dateStr,
+        close: validHistory[i].close,
+        open: validHistory[i].open || validHistory[i].close,
+        high: validHistory[i].high || validHistory[i].close,
+        low: validHistory[i].low || validHistory[i].close,
+        sma50: sma50 || validHistory[i].close,
+        sma200: sma200 || validHistory[i].close,
+        rsi: rsi || 50,
+      });
+    }
+
+    // Crossover info
+    const latest = chartData[chartData.length - 1];
+    const crossover = {
+      sma50AboveSma200: latest ? latest.sma50 > latest.sma200 : false,
+      currentDifference: latest ? latest.sma50 - latest.sma200 : 0,
+      diffPercent: latest ? ((latest.sma50 - latest.sma200) / latest.sma200) * 100 : 0
+    };
+
+    const result = {
+      symbol: upperSymbol,
+      name: quote.longName || quote.shortName || upperSymbol,
+      stats: {
+        high52: quote.fiftyTwoWeekHigh || null,
+        low52: quote.fiftyTwoWeekLow || null,
+        avgVolume: quote.averageDailyVolume10Day || quote.averageDailyVolume3Month || null,
+        volume: quote.regularMarketVolume || null,
+        peRatio: quote.trailingPE || quote.forwardPE || null,
+        divYield: quote.dividendYield || null,
+        price: quote.regularMarketPrice || null,
+        change: quote.regularMarketChangePercent || null
+      },
+      chartData,
+      crossover
+    };
+
+    // Store in cache
+    detailsCache[upperSymbol] = { data: result, timestamp: Date.now() };
+
+    res.json(result);
+  } catch (error: any) {
+    console.error(`Error fetching details for ${upperSymbol}:`, error);
+    res.status(500).json({ error: `Failed to fetch details for ${upperSymbol}: ${error.message}` });
+  }
+});
 
 app.get("/api/analysis/:symbol", async (req, res) => {
   const { symbol } = req.params;

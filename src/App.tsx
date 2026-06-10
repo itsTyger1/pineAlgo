@@ -155,6 +155,10 @@ export default function App() {
   const [showGoldenStarsOnly, setShowGoldenStarsOnly] = useState(false);
   const [showPullbacksOnly, setShowPullbacksOnly] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+  const [detailsData, setDetailsData] = useState<any | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -665,6 +669,142 @@ export default function App() {
   };
 
 
+  useEffect(() => {
+    if (!selectedSymbol) {
+      setDetailsData(null);
+      setDetailsError(null);
+      return;
+    }
+
+    const fetchDetails = async () => {
+      try {
+        setDetailsLoading(true);
+        setDetailsError(null);
+        const res = await fetch(`/api/stock-details/${selectedSymbol}`);
+        if (!res.ok) {
+          throw new Error(`Failed to fetch stock details: ${res.statusText}`);
+        }
+        const data = await res.json();
+        setDetailsData(data);
+      } catch (err: any) {
+        console.error("Error fetching stock details:", err);
+        setDetailsError(err.message || "Unknown error occurred");
+      } finally {
+        setDetailsLoading(false);
+      }
+    };
+
+    fetchDetails();
+  }, [selectedSymbol]);
+
+  const renderPriceChart = (chartData: any[]) => {
+    if (!chartData || chartData.length === 0) return null;
+    const width = 450;
+    const height = 180;
+    const paddingLeft = 35;
+    const paddingRight = 10;
+    const paddingTop = 15;
+    const paddingBottom = 15;
+
+    const prices = chartData.map(d => d.close);
+    const sma50s = chartData.map(d => d.sma50);
+    const sma200s = chartData.map(d => d.sma200);
+    const allValues = [...prices, ...sma50s, ...sma200s].filter(v => typeof v === 'number');
+    const minVal = Math.min(...allValues);
+    const maxVal = Math.max(...allValues);
+    const padY = (maxVal - minVal) * 0.05 || 1;
+    const yMin = minVal - padY;
+    const yMax = maxVal + padY;
+
+    const getX = (index: number) => paddingLeft + (index / (chartData.length - 1)) * (width - paddingLeft - paddingRight);
+    const getY = (val: number) => height - paddingBottom - ((val - yMin) / (yMax - yMin)) * (height - paddingTop - paddingBottom);
+
+    let pricePoints = "";
+    let sma50Points = "";
+    let sma200Points = "";
+
+    chartData.forEach((d, idx) => {
+      const x = getX(idx);
+      pricePoints += `${idx === 0 ? 'M' : 'L'} ${x} ${getY(d.close)} `;
+      sma50Points += `${idx === 0 ? 'M' : 'L'} ${x} ${getY(d.sma50)} `;
+      sma200Points += `${idx === 0 ? 'M' : 'L'} ${x} ${getY(d.sma200)} `;
+    });
+
+    const areaPoints = pricePoints + `L ${getX(chartData.length - 1)} ${height - paddingBottom} L ${getX(0)} ${height - paddingBottom} Z`;
+
+    const midPrice = (yMin + yMax) / 2;
+
+    return (
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full">
+        <defs>
+          <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#6366f1" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="#6366f1" stopOpacity="0.0" />
+          </linearGradient>
+        </defs>
+
+        {/* Grid lines */}
+        <line x1={paddingLeft} y1={getY(yMin)} x2={width - paddingRight} y2={getY(yMin)} stroke={isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'} strokeWidth="1" />
+        <line x1={paddingLeft} y1={getY(midPrice)} x2={width - paddingRight} y2={getY(midPrice)} stroke={isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'} strokeWidth="1" strokeDasharray="4 4" />
+        <line x1={paddingLeft} y1={getY(yMax)} x2={width - paddingRight} y2={getY(yMax)} stroke={isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'} strokeWidth="1" />
+
+        {/* Grid labels */}
+        <text x={paddingLeft - 5} y={getY(yMax) + 3} textAnchor="end" className="text-[7px] font-mono font-bold fill-slate-500">${yMax.toFixed(1)}</text>
+        <text x={paddingLeft - 5} y={getY(midPrice) + 3} textAnchor="end" className="text-[7px] font-mono font-bold fill-slate-500">${midPrice.toFixed(1)}</text>
+        <text x={paddingLeft - 5} y={getY(yMin) + 3} textAnchor="end" className="text-[7px] font-mono font-bold fill-slate-500">${yMin.toFixed(1)}</text>
+
+        {/* Areas & Paths */}
+        <path d={areaPoints} fill="url(#priceGrad)" stroke="none" />
+        <path d={pricePoints} fill="none" stroke="#6366f1" strokeWidth="2" />
+        <path d={sma50Points} fill="none" stroke="#10b981" strokeWidth="1.2" />
+        <path d={sma200Points} fill="none" stroke="#f59e0b" strokeWidth="1.2" />
+      </svg>
+    );
+  };
+
+  const renderRsiChart = (chartData: any[]) => {
+    if (!chartData || chartData.length === 0) return null;
+    const width = 450;
+    const height = 100;
+    const paddingLeft = 35;
+    const paddingRight = 10;
+    const paddingTop = 10;
+    const paddingBottom = 10;
+
+    const yMin = 0;
+    const yMax = 100;
+
+    const getX = (index: number) => paddingLeft + (index / (chartData.length - 1)) * (width - paddingLeft - paddingRight);
+    const getY = (val: number) => height - paddingBottom - ((val - yMin) / (yMax - yMin)) * (height - paddingTop - paddingBottom);
+
+    let rsiPoints = "";
+    chartData.forEach((d, idx) => {
+      const x = getX(idx);
+      rsiPoints += `${idx === 0 ? 'M' : 'L'} ${x} ${getY(d.rsi)} `;
+    });
+
+    return (
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full">
+        {/* Shaded Oversold/Overbought zone */}
+        <rect x={paddingLeft} y={getY(70)} width={width - paddingLeft - paddingRight} height={getY(30) - getY(70)} fill="rgba(168,85,247,0.03)" />
+
+        {/* Boundary lines */}
+        <line x1={paddingLeft} y1={getY(70)} x2={width - paddingRight} y2={getY(70)} stroke="#ef4444" strokeWidth="0.8" strokeDasharray="3 3" />
+        <line x1={paddingLeft} y1={getY(50)} x2={width - paddingRight} y2={getY(50)} stroke={isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'} strokeWidth="0.8" strokeDasharray="3 3" />
+        <line x1={paddingLeft} y1={getY(30)} x2={width - paddingRight} y2={getY(30)} stroke="#3b82f6" strokeWidth="0.8" strokeDasharray="3 3" />
+
+        {/* Axis labels */}
+        <text x={paddingLeft - 5} y={getY(70) + 3} textAnchor="end" className="text-[7px] font-mono font-bold fill-red-450">70</text>
+        <text x={paddingLeft - 5} y={getY(50) + 3} textAnchor="end" className="text-[7px] font-mono font-bold fill-slate-500">50</text>
+        <text x={paddingLeft - 5} y={getY(30) + 3} textAnchor="end" className="text-[7px] font-mono font-bold fill-blue-450">30</text>
+
+        {/* RSI path */}
+        <path d={rsiPoints} fill="none" stroke="#a855f7" strokeWidth="1.5" />
+      </svg>
+    );
+  };
+
+
   return (
     <div className={`min-h-screen transition-colors duration-300 font-sans selection:bg-indigo-500/30 relative ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-[#FAF9F5] text-slate-600'}`}>
       {/* Frosted Glass Background Accents */}
@@ -1056,7 +1196,8 @@ export default function App() {
                   {visibleStocks.map((stock) => (
                     <tr
                       key={stock.symbol}
-                      className={`group transition-colors ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50/60'}`}
+                      onClick={() => setSelectedSymbol(stock.symbol)}
+                      className={`group transition-colors cursor-pointer ${isDarkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50/60'}`}
                     >
                       <td
                         className={`px-1 md:px-4 py-2.5 sticky left-0 whitespace-nowrap transition-colors duration-150 z-30 border-l-2 border-l-transparent group-hover:border-l-indigo-500 border-b ${isDarkMode ? 'bg-slate-950 border-r border-white/10 border-b-white/5 group-hover:bg-slate-900' : 'bg-white border-r border-slate-200/60 border-b border-slate-200/60 group-hover:bg-slate-50'}`}
@@ -1086,13 +1227,12 @@ export default function App() {
                                   </span>
                                 </span>
                               )}
-                              <a
-                                href="#"
-                                onClick={(e) => { e.preventDefault(); handleChartRedirect(stock.symbol); }}
-                                className={`text-[11px] md:text-sm font-black transition-colors uppercase tracking-tighter underline ${isDarkMode ? 'text-white hover:text-indigo-400' : 'text-slate-800 hover:text-indigo-600'}`}
+                              <button
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedSymbol(stock.symbol); }}
+                                className={`text-[11px] md:text-sm font-black transition-colors uppercase tracking-tighter hover:underline text-left cursor-pointer ${isDarkMode ? 'text-white hover:text-indigo-400' : 'text-slate-800 hover:text-indigo-600'}`}
                               >
                                 {stock.symbol}
-                              </a>
+                              </button>
                               {stock.change !== undefined && stock.change !== null && stock.price > 0 && (
                                 <span className={`absolute left-full ml-1.5 whitespace-nowrap text-[7px] md:text-[9px] font-mono font-bold leading-none ${stock.change === 0
                                     ? (isDarkMode ? 'text-slate-400' : 'text-slate-500')
@@ -1183,7 +1323,7 @@ export default function App() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  onClick={() => handleChartRedirect(stock.symbol)}
+                  onClick={() => setSelectedSymbol(stock.symbol)}
                   className={`backdrop-blur-xl border rounded-2xl p-5 md:p-6 transition-all group relative overflow-hidden text-left cursor-pointer interactive-target ${isDarkMode ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-white/80 border-slate-200/45 hover:border-indigo-300 hover:bg-white shadow-xl shadow-slate-100/40 hover:shadow-indigo-500/5'}`}
                 >
                   <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
@@ -1286,6 +1426,257 @@ export default function App() {
         )}
 
       </main>
+
+      {/* Stock Detail Expansion Drawer */}
+      <AnimatePresence>
+        {selectedSymbol && (
+          <>
+            {/* Backdrop Overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedSymbol(null)}
+              className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-50 pointer-events-auto"
+            />
+
+            {/* Slide-over Panel */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className={`fixed right-0 top-0 bottom-0 w-full sm:w-[500px] md:w-[550px] shadow-2xl z-50 flex flex-col border-l pointer-events-auto ${isDarkMode ? 'bg-slate-950/95 border-white/10 text-white shadow-slate-950/50' : 'bg-white/95 border-slate-200 text-slate-800 shadow-slate-300/40'}`}
+            >
+              {/* Header */}
+              <div className={`p-5 md:p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-white/5 bg-white/2' : 'border-slate-100 bg-slate-50/50'}`}>
+                <div>
+                  <div className="flex items-center gap-2.5">
+                    <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight leading-none font-mono">
+                      {selectedSymbol}
+                    </h2>
+                    {detailsData && (
+                      <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest ${isDarkMode ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-indigo-55 text-indigo-700 border border-indigo-200'}`}>
+                        Details
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-[10px] uppercase font-bold tracking-widest mt-1.5 truncate max-w-[280px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {detailsData ? detailsData.name : 'Loading metadata...'}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleChartRedirect(selectedSymbol)}
+                    title="Open in TradingView"
+                    className={`p-2 rounded-xl border transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${isDarkMode ? 'bg-slate-900 border-white/10 hover:bg-white/5 text-slate-300 hover:text-white' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-650 hover:text-slate-900 shadow-sm'}`}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">TradingView</span>
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedSymbol(null)}
+                    className={`p-2 rounded-xl border transition-all active:scale-95 cursor-pointer ${isDarkMode ? 'bg-slate-900 border-white/10 hover:bg-white/5 text-slate-400 hover:text-white' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-900 shadow-sm'}`}
+                  >
+                    <span className="text-[10px] font-black uppercase tracking-widest">Close</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Body Content */}
+              <div className="flex-1 overflow-y-auto p-5 md:p-6 space-y-6 select-none custom-scrollbar">
+                {detailsLoading && !detailsData && (
+                  <div className="space-y-6 py-10">
+                    <div className="space-y-3">
+                      <div className={`h-6 rounded-lg w-1/3 animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-slate-200/60'}`}></div>
+                      <div className={`h-4 rounded-lg w-2/3 animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-slate-200/60'}`}></div>
+                    </div>
+                    <div className={`h-[180px] rounded-2xl w-full animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-slate-200/60'}`}></div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className={`h-12 rounded-xl animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-slate-200/60'}`}></div>
+                      <div className={`h-12 rounded-xl animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-slate-200/60'}`}></div>
+                      <div className={`h-12 rounded-xl animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-slate-200/60'}`}></div>
+                      <div className={`h-12 rounded-xl animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-slate-200/60'}`}></div>
+                    </div>
+                  </div>
+                )}
+
+                {detailsError && (
+                  <div className={`p-4 border rounded-2xl flex items-center gap-3 text-xs backdrop-blur-md ${isDarkMode ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' : 'bg-rose-50 border-rose-200 text-rose-600'}`}>
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span className="font-semibold tracking-tight">{detailsError}</span>
+                  </div>
+                )}
+
+                {detailsData && (
+                  <>
+                    {/* Live Metrics Row */}
+                    <div className={`flex justify-between items-center p-4 rounded-2xl border ${isDarkMode ? 'bg-white/2 border-white/5' : 'bg-slate-50/50 border-slate-200/30'}`}>
+                      <div className="text-left">
+                        <span className="text-[8px] uppercase tracking-widest font-black text-slate-500">Live Price</span>
+                        <div className="text-2xl font-black tracking-tight mt-0.5">
+                          ${detailsData.stats.price ? detailsData.stats.price.toFixed(2) : '—'}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[8px] uppercase tracking-widest font-black text-slate-500">Daily Change</span>
+                        <div className={`text-base font-black tracking-tight mt-0.5 ${detailsData.stats.change === 0 ? (isDarkMode ? 'text-slate-400' : 'text-slate-500') : detailsData.stats.change > 0 ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-600')}`}>
+                          {detailsData.stats.change ? (detailsData.stats.change > 0 ? '+' : '') + detailsData.stats.change.toFixed(2) + '%' : '—'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 5-Timeframe Heatmap row */}
+                    <div className="space-y-2.5">
+                      <span className="text-[9px] uppercase tracking-[0.2em] font-black text-slate-500 block text-left">
+                        Multi-Timeframe Zone Heatmap
+                      </span>
+                      <div className={`grid grid-cols-5 gap-1.5 md:gap-2 p-3 rounded-2xl border ${isDarkMode ? 'bg-white/2 border-white/5' : 'bg-slate-50/50 border-slate-200/30'}`}>
+                        {['1h', '4hr', '1d', '1wk', '1mo'].map((tf) => {
+                          const zone = stocksByTimeframe[tf]?.[selectedSymbol]?.zone || 'Neutral Zone';
+                          const displayTf = tf === '1h' ? '1H' : tf === '4hr' ? '4H' : tf === '1d' ? 'D' : tf === '1wk' ? 'W' : 'M';
+                          return (
+                            <div key={tf} className="flex flex-col items-center gap-1.5">
+                              <span className="text-[8px] font-black tracking-wider text-slate-500 uppercase">{displayTf}</span>
+                              {getZoneBadge(zone)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* SMA Crossover State Badge */}
+                    <div className={`p-4 rounded-2xl border flex items-center justify-between gap-4 text-left ${isDarkMode ? 'bg-white/2 border-white/5' : 'bg-slate-50/50 border-slate-200/30'}`}>
+                      <div>
+                        <span className="text-[8px] uppercase tracking-widest font-black text-slate-500 block mb-1">SMA Trend Alignment</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-bold uppercase tracking-wider ${detailsData.crossover.sma50AboveSma200 ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-600')}`}>
+                            {detailsData.crossover.sma50AboveSma200 ? 'Bullish Golden Cross' : 'Bearish Death Cross'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[8px] uppercase tracking-widest font-black text-slate-500 block mb-1">MA Separation</span>
+                        <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${detailsData.crossover.sma50AboveSma200 ? (isDarkMode ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400') : (isDarkMode ? 'bg-rose-500/10 text-rose-400' : 'bg-slate-500/10 text-slate-400')}`}>
+                          {detailsData.crossover.sma50AboveSma200 ? '+' : ''}{detailsData.crossover.diffPercent.toFixed(2)}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Sparkline and MA Chart Pane (SVG) */}
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[9px] uppercase tracking-[0.2em] font-black text-slate-500 block text-left">
+                          90-Day Trend Chart (Price vs. SMA 50 / 200)
+                        </span>
+                        <div className="flex items-center gap-2.5 text-[8px] font-black tracking-wider uppercase">
+                          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span> Price</span>
+                          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded bg-emerald-500"></span> SMA 50</span>
+                          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded bg-amber-500"></span> SMA 200</span>
+                        </div>
+                      </div>
+                      <div className={`p-4 rounded-2xl border flex flex-col justify-center items-center h-[180px] relative overflow-hidden ${isDarkMode ? 'bg-slate-950/40 border-white/5' : 'bg-slate-50/20 border-slate-200/30'}`}>
+                        {renderPriceChart(detailsData.chartData)}
+                      </div>
+                    </div>
+
+                    {/* RSI Pane (SVG) */}
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[9px] uppercase tracking-[0.2em] font-black text-slate-500 block text-left">
+                          90-Day RSI (21) History
+                        </span>
+                        <div className="flex items-center gap-2 text-[8px] font-mono tracking-widest text-slate-500 uppercase">
+                          <span>OB: 70</span>
+                          <span>•</span>
+                          <span>OS: 30</span>
+                        </div>
+                      </div>
+                      <div className={`p-4 rounded-2xl border flex flex-col justify-center items-center h-[120px] relative overflow-hidden ${isDarkMode ? 'bg-slate-950/40 border-white/5' : 'bg-slate-50/20 border-slate-200/30'}`}>
+                        {renderRsiChart(detailsData.chartData)}
+                      </div>
+                    </div>
+
+                    {/* Key Stats Grid */}
+                    <div className="space-y-3 text-left">
+                      <span className="text-[9px] uppercase tracking-[0.2em] font-black text-slate-500 block">
+                        Core Statistics
+                      </span>
+                      <div className={`grid grid-cols-2 gap-4 p-4 rounded-2xl border ${isDarkMode ? 'bg-white/2 border-white/5' : 'bg-slate-50/50 border-slate-200/30'}`}>
+                        <div className="space-y-1">
+                          <span className="text-[8px] uppercase tracking-widest font-black text-slate-500 block">P/E Ratio</span>
+                          <span className={`text-xs font-mono font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                            {detailsData.stats.peRatio ? detailsData.stats.peRatio.toFixed(2) : '—'}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[8px] uppercase tracking-widest font-black text-slate-500 block">Dividend Yield</span>
+                          <span className={`text-xs font-mono font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                            {detailsData.stats.divYield ? `${(detailsData.stats.divYield * 100).toFixed(2)}%` : '—'}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[8px] uppercase tracking-widest font-black text-slate-500 block">Volume (Today)</span>
+                          <span className={`text-xs font-mono font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                            {detailsData.stats.volume ? detailsData.stats.volume.toLocaleString() : '—'}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[8px] uppercase tracking-widest font-black text-slate-500 block">Avg Volume (10D)</span>
+                          <span className={`text-xs font-mono font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                            {detailsData.stats.avgVolume ? detailsData.stats.avgVolume.toLocaleString() : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 52-Week Range visual slider */}
+                    <div className="space-y-3 text-left">
+                      <span className="text-[9px] uppercase tracking-[0.2em] font-black text-slate-500 block">
+                        52-Week Range
+                      </span>
+                      <div className={`p-4 rounded-2xl border space-y-3 ${isDarkMode ? 'bg-white/2 border-white/5' : 'bg-slate-50/50 border-slate-200/30'}`}>
+                        <div className="flex justify-between items-center text-[10px] font-mono font-bold">
+                          <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
+                            L: ${detailsData.stats.low52 ? detailsData.stats.low52.toFixed(2) : '—'}
+                          </span>
+                          <span className={isDarkMode ? 'text-slate-200' : 'text-slate-800'}>
+                            Current: ${detailsData.stats.price ? detailsData.stats.price.toFixed(2) : '—'}
+                          </span>
+                          <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>
+                            H: ${detailsData.stats.high52 ? detailsData.stats.high52.toFixed(2) : '—'}
+                          </span>
+                        </div>
+                        {detailsData.stats.low52 && detailsData.stats.high52 && detailsData.stats.price && (
+                          <div className={`h-1.5 rounded-full relative overflow-visible ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200/60'}`}>
+                            {(() => {
+                              const pct = Math.min(100, Math.max(0, ((detailsData.stats.price - detailsData.stats.low52) / (detailsData.stats.high52 - detailsData.stats.low52)) * 100));
+                              return (
+                                <>
+                                  <div
+                                    className="absolute h-full rounded-full bg-indigo-500"
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                  <div
+                                    className="absolute w-3.5 h-3.5 rounded-full bg-white border-2 border-indigo-500 shadow-md -top-1"
+                                    style={{ left: `calc(${pct}% - 7px)` }}
+                                  />
+                                </>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <footer className="mt-12 md:mt-20">
         <div className={`max-w-7xl mx-auto px-6 md:px-8 py-10 md:py-16 border-t flex flex-col md:flex-row justify-between items-start md:items-center gap-8 opacity-40 hover:opacity-100 transition-opacity ${isDarkMode ? 'border-white/10' : 'border-slate-200/40'}`}>
