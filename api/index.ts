@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import cors from "cors";
+import fs from "fs";
 import YahooFinance from 'yahoo-finance2';
 import { subDays, format } from 'date-fns';
 
@@ -255,8 +256,32 @@ const quoteCache: Record<string, { data: any, timestamp: number }> = {};
 const META_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 const SUMMARY_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours for sectors/profiles
 
-// In-memory only sector cache (no filesystem I/O — Vercel has read-only fs)
+// In-memory sector cache loaded from static JSON file
+const CACHE_FILE = path.join(process.cwd(), 'api', 'summary-cache.json');
 let summaryCache: Record<string, string | { data: any, timestamp: number }> = {};
+
+try {
+  if (fs.existsSync(CACHE_FILE)) {
+    const raw = fs.readFileSync(CACHE_FILE, 'utf8');
+    summaryCache = JSON.parse(raw);
+    console.log(`Loaded ${Object.keys(summaryCache).length} cached sectors/summaries from persistent cache file.`);
+  }
+} catch (e) {
+  console.warn("Failed to load persistent summary cache file:", e);
+}
+
+function saveSummaryCache() {
+  if (process.env.VERCEL) return; // Skip writing on Vercel read-only filesystem
+  try {
+    const dir = path.dirname(CACHE_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(summaryCache, null, 2), 'utf8');
+  } catch (e) {
+    console.warn("Failed to save summary cache file:", e);
+  }
+}
 
 // Cache for screener output
 let cachedStockList: any[] = [];
@@ -647,6 +672,7 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     yfQueue.add(() => yahooFinance.quoteSummary(symbol, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
       if (res?.assetProfile?.sector) {
         summaryCache[symbol.toUpperCase()] = res.assetProfile.sector;
+        saveSummaryCache();
       }
     }).catch(() => null), 3000);
   }
@@ -990,6 +1016,7 @@ app.post("/api/analysis/batch", async (req, res) => {
               yfQueue.add(() => yahooFinance.quoteSummary(sym, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
                 if (res?.assetProfile?.sector) {
                   summaryCache[sym.toUpperCase()] = res.assetProfile.sector;
+                  saveSummaryCache();
                 }
               }).catch(() => null), 20000);
             }, index * 350); // Space them out by 350ms to be gentle on Yahoo Finance
