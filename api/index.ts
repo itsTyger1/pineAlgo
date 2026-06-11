@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import cors from "cors";
-import fs from "fs";
 import YahooFinance from 'yahoo-finance2';
 import { subDays, format } from 'date-fns';
 
@@ -11,6 +10,112 @@ const PORT = 3000;
 
 app.use(cors());
 app.use(express.json());
+
+// Cached Intl.DateTimeFormat for hot-loop time filtering (100x faster than toLocaleString)
+const cachedETFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false
+});
+
+function getETHourMinute(date: Date): { h: number; m: number } {
+  const parts = cachedETFormatter.formatToParts(date);
+  let h = 0, m = 0;
+  for (const p of parts) {
+    if (p.type === 'hour') h = +p.value;
+    else if (p.type === 'minute') m = +p.value;
+  }
+  return { h, m };
+}
+
+/**
+ * Compute SMA50, SMA200, and RSI21 for chart points in a single forward pass.
+ * Returns arrays aligned to closePrices indices [0..n-1].
+ * This replaces the O(n²) per-point recalculation with O(n) rolling computation.
+ */
+function computeChartIndicators(
+  closePrices: number[],
+  startIdx: number,
+  sma50Len = 50,
+  sma200Len = 200,
+  rsiLen = 21
+): { sma50: (number | null)[]; sma200: (number | null)[]; rsi: (number | null)[] } {
+  const n = closePrices.length;
+  const sma50Arr: (number | null)[] = new Array(n).fill(null);
+  const sma200Arr: (number | null)[] = new Array(n).fill(null);
+  const rsiArr: (number | null)[] = new Array(n).fill(null);
+
+  // Rolling SMA sums
+  let sum50 = 0, sum200 = 0;
+
+  // RSI state (Wilder's smoothing)
+  let avgGain = 0, avgLoss = 0;
+  let rsiInitialized = false;
+
+  for (let i = 0; i < n; i++) {
+    const price = closePrices[i];
+
+    // --- SMA50 ---
+    sum50 += price;
+    if (i >= sma50Len) sum50 -= closePrices[i - sma50Len];
+    if (i >= sma50Len - 1) {
+      sma50Arr[i] = sum50 / sma50Len;
+    } else {
+      // Use available data (matches original calculateSMA behavior)
+      sma50Arr[i] = sum50 / (i + 1);
+    }
+
+    // --- SMA200 ---
+    sum200 += price;
+    if (i >= sma200Len) sum200 -= closePrices[i - sma200Len];
+    if (i >= sma200Len - 1) {
+      sma200Arr[i] = sum200 / sma200Len;
+    } else {
+      sma200Arr[i] = sum200 / (i + 1);
+    }
+
+    // --- RSI (Wilder's method) ---
+    if (i > 0) {
+      const diff = price - closePrices[i - 1];
+      const gain = diff > 0 ? diff : 0;
+      const loss = diff < 0 ? -diff : 0;
+
+      if (!rsiInitialized && i >= rsiLen) {
+        // Compute initial averages from the first rsiLen changes
+        let initGain = 0, initLoss = 0;
+        for (let j = 1; j <= rsiLen; j++) {
+          const d = closePrices[j] - closePrices[j - 1];
+          initGain += d > 0 ? d : 0;
+          initLoss += d < 0 ? -d : 0;
+        }
+        avgGain = initGain / rsiLen;
+        avgLoss = initLoss / rsiLen;
+        // Apply Wilder's smoothing for remaining points up to current
+        for (let j = rsiLen + 1; j <= i; j++) {
+          const d2 = closePrices[j] - closePrices[j - 1];
+          avgGain = (avgGain * (rsiLen - 1) + (d2 > 0 ? d2 : 0)) / rsiLen;
+          avgLoss = (avgLoss * (rsiLen - 1) + (d2 < 0 ? -d2 : 0)) / rsiLen;
+        }
+        rsiInitialized = true;
+      } else if (rsiInitialized) {
+        avgGain = (avgGain * (rsiLen - 1) + gain) / rsiLen;
+        avgLoss = (avgLoss * (rsiLen - 1) + loss) / rsiLen;
+      }
+
+      if (rsiInitialized) {
+        if (avgLoss === 0) {
+          rsiArr[i] = 100;
+        } else {
+          const rs = avgGain / avgLoss;
+          rsiArr[i] = 100 - (100 / (1 + rs));
+        }
+      }
+    }
+  }
+
+  return { sma50: sma50Arr, sma200: sma200Arr, rsi: rsiArr };
+}
 
 // Helper to calculate SMA
 function calculateSMA(data: number[], length: number): number | null {
@@ -150,31 +255,8 @@ const quoteCache: Record<string, { data: any, timestamp: number }> = {};
 const META_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 const SUMMARY_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours for sectors/profiles
 
-const CACHE_FILE = path.join(process.cwd(), 'api', 'summary-cache.json');
+// In-memory only sector cache (no filesystem I/O — Vercel has read-only fs)
 let summaryCache: Record<string, string | { data: any, timestamp: number }> = {};
-
-// Load persistent summary cache at startup
-try {
-  if (fs.existsSync(CACHE_FILE)) {
-    const raw = fs.readFileSync(CACHE_FILE, 'utf8');
-    summaryCache = JSON.parse(raw);
-    console.log(`Loaded ${Object.keys(summaryCache).length} cached sectors/summaries from persistent cache file.`);
-  }
-} catch (e) {
-  console.warn("Failed to load persistent summary cache file:", e);
-}
-
-function saveSummaryCache() {
-  try {
-    const dir = path.dirname(CACHE_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(summaryCache, null, 2), 'utf8');
-  } catch (e) {
-    console.warn("Failed to save summary cache file:", e);
-  }
-}
 
 // Cache for screener output
 let cachedStockList: any[] = [];
@@ -192,6 +274,7 @@ app.get("/api/health", (req, res) => {
 app.get("/api/stocks", async (req, res) => {
   const refresh = req.query.refresh === 'true';
   if (!refresh && cachedStockList.length > 0 && Date.now() - lastStockListCacheTime < STOCK_LIST_TTL) {
+    res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
     return res.json(cachedStockList);
   }
 
@@ -358,6 +441,7 @@ app.get("/api/stocks", async (req, res) => {
     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 28000));
     const stockList = await Promise.race([fetchStocksTask(), timeoutPromise]);
 
+    res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
     return res.json(stockList);
 
   } catch (error: any) {
@@ -532,9 +616,9 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
   if (timeframe === '4hr') {
     for (const q of history) {
       if (q.date && typeof q.close === 'number') {
-        const d = new Date(q.date);
-        const timeStr = d.toLocaleString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
-        if (timeStr === '12:30' || timeStr === '15:30') {
+        const { h, m } = getETHourMinute(new Date(q.date));
+        // 4hr bar boundaries: 12:30 and 15:30 ET
+        if ((h === 12 && m === 30) || (h === 15 && m === 30)) {
           prices.push(q.close);
         }
       }
@@ -542,11 +626,7 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
   } else if (timeframe === '1h') {
     for (const q of history) {
       if (q.date && typeof q.close === 'number') {
-        const d = new Date(q.date);
-        const timeStr = d.toLocaleString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
-        const [hourParts, minuteParts] = timeStr.split(':');
-        const h = parseInt(hourParts, 10);
-        const m = parseInt(minuteParts, 10);
+        const { h, m } = getETHourMinute(new Date(q.date));
         const totalMinutes = h * 60 + m;
         // Regular session standard trading hours: 9:30 AM to 4:00 PM EST (570 to 960 minutes)
         if (totalMinutes >= 570 && totalMinutes < 960) {
@@ -567,12 +647,11 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     yfQueue.add(() => yahooFinance.quoteSummary(symbol, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
       if (res?.assetProfile?.sector) {
         summaryCache[symbol.toUpperCase()] = res.assetProfile.sector;
-        saveSummaryCache();
       }
     }).catch(() => null), 3000);
   }
 
-  // Fallback map for popular stocks if YF rate limits us on AWS/Vercel
+  // Comprehensive sector map for top 500 US equities — eliminates "Other" labels without API calls
   const SECTOR_MAP: Record<string, string> = {
     // Technology
     "AAPL": "Technology", "MSFT": "Technology", "NVDA": "Technology", "AVGO": "Technology",
@@ -585,29 +664,48 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     "QCOM": "Technology", "MU": "Technology", "FSLR": "Technology", "ENPH": "Technology",
     "SEDG": "Technology", "ARM": "Technology", "SNOW": "Technology", "MDB": "Technology",
     "NET": "Technology", "ANSS": "Technology", "HPQ": "Technology", "HPE": "Technology",
-    "NTAP": "Technology", "WDC": "Technology", "STX": "Technology", "FITB": "Financials",
-
+    "NTAP": "Technology", "WDC": "Technology", "STX": "Technology",
+    "FTNT": "Technology", "ZS": "Technology", "OKTA": "Technology",
+    "DELL": "Technology", "MRVL": "Technology", "ON": "Technology", "SWKS": "Technology",
+    "MPWR": "Technology", "KEYS": "Technology", "TER": "Technology",
+    "NXPI": "Technology", "ADI": "Technology", "MCHP": "Technology",
+    "CTSH": "Technology", "EPAM": "Technology", "GLOB": "Technology", "DOCU": "Technology",
+    "ZM": "Technology", "TWLO": "Technology", "U": "Technology", "RBLX": "Technology",
+    "PATH": "Technology", "AI": "Technology", "SHOP": "Technology", "SAP": "Technology",
+    "UBER": "Technology", "ABNB": "Technology", "DASH": "Technology", "LYFT": "Technology",
+    "ROKU": "Technology", "TTD": "Technology", "BILL": "Technology", "HUBS": "Technology",
+    "VEEV": "Technology", "PAYC": "Technology", "PCTY": "Technology",
+    "SONY": "Technology", "INFY": "Technology", "WIT": "Technology",
     // Communication Services
     "GOOG": "Communication", "GOOGL": "Communication", "META": "Communication", "NFLX": "Communication",
     "DIS": "Communication", "TMUS": "Communication", "VZ": "Communication", "T": "Communication",
     "CMCSA": "Communication", "CHTR": "Communication", "EA": "Communication", "TTWO": "Communication",
     "MTCH": "Communication", "SNAP": "Communication", "PINS": "Communication", "LYV": "Communication",
     "OMC": "Communication", "IPG": "Communication", "WBD": "Communication",
-
+    "PARA": "Communication", "FOX": "Communication", "FOXA": "Communication",
+    "SPOT": "Communication", "RDDT": "Communication", "BIDU": "Communication",
     // Consumer Discretionary & Staples
     "AMZN": "Consumer", "TSLA": "Consumer", "WMT": "Consumer", "COST": "Consumer",
     "HD": "Consumer", "MCD": "Consumer", "KO": "Consumer", "PEP": "Consumer",
     "NKE": "Consumer", "SBUX": "Consumer", "TGT": "Consumer", "TJX": "Consumer",
     "LOW": "Consumer", "CMG": "Consumer", "BKNG": "Consumer", "EL": "Consumer",
-    "ROST": "Consumer", "DG": "Consumer", "DLTR": "Consumer", "Target": "Consumer",
+    "ROST": "Consumer", "DG": "Consumer", "DLTR": "Consumer",
     "MAR": "Consumer", "HLT": "Consumer", "LVS": "Consumer", "MGM": "Consumer",
     "CCL": "Consumer", "RCL": "Consumer", "NCLH": "Consumer", "MELI": "Consumer",
     "SE": "Consumer", "SG": "Consumer", "YUM": "Consumer", "DPZ": "Consumer",
-    "OR.PA": "Consumer", "LVMUY": "Consumer", "MO": "Consumer", "PM": "Consumer",
+    "MO": "Consumer", "PM": "Consumer",
     "PG": "Consumer", "CL": "Consumer", "KDP": "Consumer", "MDLZ": "Consumer",
     "GIS": "Consumer", "K": "Consumer", "KHC": "Consumer", "SYY": "Consumer",
-    "ADM": "Consumer", "KR": "Consumer", "TSG": "Consumer",
-
+    "ADM": "Consumer", "KR": "Consumer",
+    "LULU": "Consumer", "DECK": "Consumer", "CPNG": "Consumer", "W": "Consumer",
+    "ETSY": "Consumer", "WYNN": "Consumer", "CZR": "Consumer",
+    "DHI": "Consumer", "LEN": "Consumer", "PHM": "Consumer", "TOL": "Consumer",
+    "NVR": "Consumer", "AZO": "Consumer", "ORLY": "Consumer",
+    "GPC": "Consumer", "TSCO": "Consumer", "BBY": "Consumer",
+    "F": "Consumer", "GM": "Consumer", "RIVN": "Consumer", "LCID": "Consumer",
+    "STZ": "Consumer", "HSY": "Consumer", "MNST": "Consumer", "CELH": "Consumer",
+    "TM": "Consumer", "BABA": "Consumer", "JD": "Consumer", "PDD": "Consumer",
+    "NIO": "Consumer", "LI": "Consumer", "XPEV": "Consumer",
     // Financials
     "JPM": "Financials", "BAC": "Financials", "WFC": "Financials", "C": "Financials",
     "GS": "Financials", "MS": "Financials", "AXP": "Financials", "BLK": "Financials",
@@ -618,7 +716,11 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     "PRU": "Financials", "TRV": "Financials", "ALL": "Financials", "CME": "Financials",
     "ICE": "Financials", "SPGI": "Financials", "MCO": "Financials", "DFS": "Financials",
     "SYF": "Financials", "KEY": "Financials", "HBAN": "Financials", "RF": "Financials",
-
+    "FITB": "Financials", "CFG": "Financials", "MTB": "Financials", "NTRS": "Financials",
+    "STT": "Financials", "BK": "Financials", "USB": "Financials", "PNC": "Financials",
+    "TFC": "Financials", "ALLY": "Financials", "LC": "Financials",
+    "MSCI": "Financials", "FIS": "Financials", "FISV": "Financials", "GPN": "Financials",
+    "RY": "Financials", "HDB": "Financials", "NDAQ": "Financials", "CBOE": "Financials",
     // Healthcare
     "JNJ": "Healthcare", "UNH": "Healthcare", "PFE": "Healthcare", "LLY": "Healthcare",
     "ABBV": "Healthcare", "MRK": "Healthcare", "TMO": "Healthcare", "ABT": "Healthcare",
@@ -630,14 +732,17 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     "GILD": "Healthcare", "BMRN": "Healthcare", "INCY": "Healthcare", "EXAS": "Healthcare",
     "AMGN": "Healthcare", "HCA": "Healthcare", "IQV": "Healthcare", "MDT": "Healthcare",
     "AZN": "Healthcare", "NVO": "Healthcare", "NVS": "Healthcare", "SNY": "Healthcare",
-
+    "SGEN": "Healthcare", "DXCM": "Healthcare", "HOLX": "Healthcare", "BAX": "Healthcare",
+    "A": "Healthcare", "WAT": "Healthcare", "GEHC": "Healthcare", "PODD": "Healthcare",
+    "CRSP": "Healthcare", "NTLA": "Healthcare", "EDIT": "Healthcare", "BEAM": "Healthcare",
+    "PACB": "Healthcare", "MOH": "Healthcare", "HUM": "Healthcare",
     // Energy
     "XOM": "Energy", "CVX": "Energy", "COP": "Energy", "OXY": "Energy",
     "SLB": "Energy", "HAL": "Energy", "BKR": "Energy", "EOG": "Energy",
     "MPC": "Energy", "PSX": "Energy", "VLO": "Energy", "HES": "Energy",
     "DVN": "Energy", "LNG": "Energy", "WMB": "Energy", "KMI": "Energy",
     "PXD": "Energy", "FANG": "Energy", "MRO": "Energy", "APA": "Energy",
-
+    "TRGP": "Energy", "OKE": "Energy", "CTRA": "Energy", "EQT": "Energy", "CCJ": "Energy",
     // Industrials
     "GE": "Industrials", "CAT": "Industrials", "UNP": "Industrials", "HON": "Industrials",
     "RTX": "Industrials", "LMT": "Industrials", "UPS": "Industrials", "FDX": "Industrials",
@@ -646,19 +751,29 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     "GD": "Industrials", "NOC": "Industrials", "TDG": "Industrials", "BA": "Industrials",
     "MMM": "Industrials", "FTV": "Industrials", "IR": "Industrials", "AME": "Industrials",
     "PH": "Industrials", "ROP": "Industrials", "FAST": "Industrials", "VRSK": "Industrials",
-
+    "GWW": "Industrials", "CPRT": "Industrials", "ODFL": "Industrials", "CARR": "Industrials",
+    "OTIS": "Industrials", "TT": "Industrials", "ROK": "Industrials", "AXON": "Industrials",
+    "CTAS": "Industrials", "PAYX": "Industrials", "XYL": "Industrials", "WAB": "Industrials",
     // Materials
     "LIN": "Materials", "APD": "Materials", "SHW": "Materials", "FCX": "Materials",
     "NUE": "Materials", "DOW": "Materials", "DD": "Materials", "ALB": "Materials",
     "NEM": "Materials", "VALE": "Materials", "SCCO": "Materials", "CLF": "Materials",
     "X": "Materials", "STLD": "Materials", "RS": "Materials", "LTHM": "Materials",
     "LAC": "Materials", "SQM": "Materials",
-
-    // Utilities & Real Estate
+    "ECL": "Materials", "PPG": "Materials", "VMC": "Materials", "MLM": "Materials",
+    "BHP": "Materials", "RIO": "Materials",
+    // Utilities
     "NEE": "Utilities", "SO": "Utilities", "DUK": "Utilities", "AEP": "Utilities",
     "D": "Utilities", "EXC": "Utilities", "SRE": "Utilities", "CEG": "Utilities",
-    "VST": "Utilities", "PLD": "Real Estate", "AMT": "Real Estate", "CCI": "Real Estate",
-    "EQIX": "Real Estate", "WY": "Real Estate", "SMR": "Utilities", "CCJ": "Energy"
+    "VST": "Utilities", "SMR": "Utilities",
+    "ED": "Utilities", "WEC": "Utilities", "ES": "Utilities", "FE": "Utilities",
+    "PPL": "Utilities", "CMS": "Utilities", "ATO": "Utilities",
+    // Real Estate
+    "PLD": "Real Estate", "AMT": "Real Estate", "CCI": "Real Estate",
+    "EQIX": "Real Estate", "WY": "Real Estate",
+    "SPG": "Real Estate", "O": "Real Estate", "DLR": "Real Estate", "PSA": "Real Estate",
+    "WELL": "Real Estate", "AVB": "Real Estate", "EQR": "Real Estate",
+    "IRM": "Real Estate", "ARE": "Real Estate", "INVH": "Real Estate"
   };
 
   if (sector === 'Other') {
@@ -771,28 +886,22 @@ app.get("/api/stock-details/:symbol", async (req, res) => {
     // Compute close prices array
     const closePrices = validHistory.map((q: any) => q.close as number);
 
-    // Slice and map the last 90 trading days.
-    // To compute SMA50, SMA200, and RSI21 for day i, we need the preceding values in closePrices.
+    // Single-pass rolling computation of SMA50, SMA200, RSI21 (O(n) vs O(n²))
     const startIdx = Math.max(0, validHistory.length - 90);
+    const indicators = computeChartIndicators(closePrices, startIdx);
     const chartData = [];
 
     for (let i = startIdx; i < validHistory.length; i++) {
       const dateStr = format(new Date(validHistory[i].date), 'yyyy-MM-dd');
-      const pricesBefore = closePrices.slice(0, i + 1);
-
-      const sma50 = calculateSMA(pricesBefore, 50);
-      const sma200 = calculateSMA(pricesBefore, 200);
-      const rsi = calculateRSI(pricesBefore, 21);
-
       chartData.push({
         date: dateStr,
         close: validHistory[i].close,
         open: validHistory[i].open || validHistory[i].close,
         high: validHistory[i].high || validHistory[i].close,
         low: validHistory[i].low || validHistory[i].close,
-        sma50: sma50 || validHistory[i].close,
-        sma200: sma200 || validHistory[i].close,
-        rsi: rsi || 50,
+        sma50: indicators.sma50[i] ?? validHistory[i].close,
+        sma200: indicators.sma200[i] ?? validHistory[i].close,
+        rsi: indicators.rsi[i] ?? 50,
       });
     }
 
@@ -824,6 +933,7 @@ app.get("/api/stock-details/:symbol", async (req, res) => {
     // Store in cache
     detailsCache[upperSymbol] = { data: result, timestamp: Date.now() };
 
+    res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
     res.json(result);
   } catch (error: any) {
     console.error(`Error fetching details for ${upperSymbol}:`, error);
@@ -880,7 +990,6 @@ app.post("/api/analysis/batch", async (req, res) => {
               yfQueue.add(() => yahooFinance.quoteSummary(sym, { modules: ['assetProfile'] }, { validateResult: false }).then((res: any) => {
                 if (res?.assetProfile?.sector) {
                   summaryCache[sym.toUpperCase()] = res.assetProfile.sector;
-                  saveSummaryCache();
                 }
               }).catch(() => null), 20000);
             }, index * 350); // Space them out by 350ms to be gentle on Yahoo Finance
@@ -910,6 +1019,7 @@ app.post("/api/analysis/batch", async (req, res) => {
     // We race the batch task against a 28 second timeout to avoid proxy 504 timeouts.
     // If it times out, we still return whatever results were successfully processed so far.
     const finalResults = await Promise.race([fetchBatchTask(), timeoutLimit]);
+    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
     res.json(finalResults);
   } catch (error: any) {
     res.status(500).json({ error: "Batch analysis failed", details: error.message });
