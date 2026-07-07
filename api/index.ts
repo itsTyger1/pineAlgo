@@ -780,6 +780,7 @@ async function getAnalysis(symbol: string, timeframe: string, bypassCache = fals
     "GWW": "Industrials", "CPRT": "Industrials", "ODFL": "Industrials", "CARR": "Industrials",
     "OTIS": "Industrials", "TT": "Industrials", "ROK": "Industrials", "AXON": "Industrials",
     "CTAS": "Industrials", "PAYX": "Industrials", "XYL": "Industrials", "WAB": "Industrials",
+    "SPCX": "Industrials",
     // Materials
     "LIN": "Materials", "APD": "Materials", "SHW": "Materials", "FCX": "Materials",
     "NUE": "Materials", "DOW": "Materials", "DD": "Materials", "ALB": "Materials",
